@@ -1,0 +1,9 @@
+extends: final.yaml
+tag: assay
+
+# TIER "chemistry + assay context": structure plus the experimental conditions that define what is measured
+# (normalised cell line, virus species / strain tokens). No Title, no raw-string quirks, no PubChem SID, no SMILES style.
+features:
+  default_source_col: c_culture_norm
+  groups: {meta: [assay_num, assay_oh], style: [], meta_n: [assay_num], style_n: []}
+  cat_groups: {meta: [c_culture_norm], style: []}

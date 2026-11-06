@@ -27,7 +27,11 @@ log = logging.getLogger(__name__)
 EXTERNAL_COLUMNS = [
     "record_id", "source", "smiles", "IC50_uM", "CC50_uM", "SI", "doi", "virus_strain", "cell_line",
     "ic50_type", "ic50_relation", "cc50_type", "cc50_relation", "ic50_missing", "si_reported",
-    "document_id", "assay_id", "year", "journal", "ik14", "note",
+    "document_id", "assay_id", "year", "journal", "ik14", "inchikey", "note",
+    # traceability of every number (can be checked against ChEMBL by activity id)
+    "ic50_activity_ids", "cc50_activity_ids", "cc50_assay_id", "cc50_cell_line", "cc50_same_cell", "n_cc50_candidates",
+    # soft quality flags (records are kept, not dropped)
+    "flag_same_key_other_molecule", "flag_si_gt_1e4",
 ]
 
 UM = {"nM": 1e-3, "uM": 1.0, "µM": 1.0, "um": 1.0, "UM": 1.0, "mM": 1e3, "M": 1.0e6, "pM": 1e-6}
@@ -61,19 +65,27 @@ def to_uM(value, units, mw) -> float:
     return np.nan
 
 
-def _clean_smiles(df: pd.DataFrame, col: str) -> pd.DataFrame:
-    std = standardize_series(df[col].fillna("").astype(str), StdOptions(), n_jobs=8)
+def _clean_smiles(df: pd.DataFrame, col: str, n_jobs: int = 8) -> pd.DataFrame:
+    std = standardize_series(df[col].fillna("").astype(str), StdOptions(), n_jobs=n_jobs)
     out = df.copy()
     out["smiles_std"] = std["smiles_std"].values
     out["ik14"] = std["ik14"].values
+    out["inchikey"] = std["inchikey"].values
     return out[out["smiles_std"].notna()]
+
+
+def _ids(frame: pd.DataFrame) -> str:
+    """ChEMBL activity ids of the records a number was computed from (comma separated)."""
+    if "activity_id" not in frame:
+        return ""
+    return ",".join(str(int(v)) for v in frame["activity_id"].dropna().unique())
 
 
 def _cell(desc: str, cell_type: Optional[str]) -> str:
     return norm_culture(f"{cell_type or ''} {desc or ''}")
 
 
-def assemble_chembl(raw: dict) -> pd.DataFrame:
+def assemble_chembl(raw: dict, n_jobs: int = 8) -> pd.DataFrame:
     assays, act, tox = raw["assays"], raw["activities"], raw["cytotox"]
     tox_assays, docs, mols = raw["cytotox_assays"], raw["documents"], raw["molecules"]
     if act.empty:
@@ -85,7 +97,7 @@ def assemble_chembl(raw: dict) -> pd.DataFrame:
         tox[["molecule_chembl_id", "canonical_smiles"]].rename(columns={"canonical_smiles": "smiles"}) if len(tox) else None,
         mols[["molecule_chembl_id", "molecule_smiles"]].rename(columns={"molecule_smiles": "smiles"}) if len(mols) else None,
     ], ignore_index=True).dropna().drop_duplicates("molecule_chembl_id")
-    smi = _clean_smiles(smi, "smiles")
+    smi = _clean_smiles(smi, "smiles", n_jobs)
     mw = _mw_table(smi["smiles_std"])
     smi["mw"] = smi["smiles_std"].map(mw)
     smi = smi.set_index("molecule_chembl_id")
@@ -141,18 +153,28 @@ def assemble_chembl(raw: dict) -> pd.DataFrame:
             missing = False
         else:
             ic50, rel, ic_type, missing = np.nan, "", "", True
+        ic_ids = _ids((use if len(num) else g))
         cc = tox_by.get((doc, mol))
         cc50 = cc_type = cc_rel = np.nan
+        cc_ids = cc_assay = cc_cell = ""
+        cc_same, n_cand = False, 0
         if cc is not None and len(cc):
+            n_cand = len(cc)
             same = cc[cc["cell"] == g["cell"].iloc[0]]
-            use = same if len(same) else cc
+            cc_same = len(same) > 0                         # False => CC50 comes from ANOTHER cell line of the same paper
+            use = same if cc_same else cc
             order = use.assign(_p=use["standard_type"].map({"CC50": 0, "TC50": 1, "CTC50": 1, "CD50": 1}).fillna(2)).sort_values("_p")
             use = order[order["_p"] == order["_p"].min()]
             cc50 = float(np.exp(np.log(use["val_uM"].clip(lower=1e-9)).mean()))
             cc_type = ",".join(sorted(set(use["standard_type"].astype(str))))
             cc_rel = str(use["standard_relation"].iloc[0])
+            cc_ids = _ids(use)
+            cc_assay = ",".join(sorted(set(use["assay_chembl_id"].astype(str))))
+            cc_cell = ",".join(sorted(set(use["cell"].astype(str))))
         rows.append({"document_id": doc, "molecule_chembl_id": mol, "assay_id": assay, "IC50_uM": ic50, "CC50_uM": cc50,
                      "ic50_type": ic_type, "ic50_relation": rel, "cc50_type": cc_type, "cc50_relation": cc_rel,
+                     "ic50_activity_ids": ic_ids, "cc50_activity_ids": cc_ids, "cc50_assay_id": cc_assay,
+                     "cc50_cell_line": cc_cell, "cc50_same_cell": cc_same, "n_cc50_candidates": n_cand,
                      "ic50_missing": missing, "cell_line": g["cell"].iloc[0], "assay_desc": g["assay_desc"].iloc[0],
                      "year": g["document_year"].iloc[0], "journal": g["document_journal"].iloc[0]})
     out = pd.DataFrame(rows)
@@ -164,6 +186,7 @@ def assemble_chembl(raw: dict) -> pd.DataFrame:
     out["source"] = "chembl"
     out["smiles"] = out["molecule_chembl_id"].map(smi["smiles_std"])
     out["ik14"] = out["molecule_chembl_id"].map(smi["ik14"])
+    out["inchikey"] = out["molecule_chembl_id"].map(smi["inchikey"])
     out["doi"] = out["document_id"].map(docs.set_index("document_chembl_id")["doi"]) if len(docs) else ""
     out["virus_strain"] = out["assay_id"].map(
         lambda a: " ".join(str(x) for x in (a_info["assay_organism"].get(a), a_info["assay_strain"].get(a)) if isinstance(x, str)))
@@ -174,13 +197,18 @@ def assemble_chembl(raw: dict) -> pd.DataFrame:
     # value-less record would only add label noise (checked on molecules present in both: 0/14 are sentinels)
     has_num = out.groupby(["document_id", "molecule_chembl_id"])["IC50_uM"].transform(lambda s: s.notna().any())
     keep &= ~(out["ic50_missing"] & has_num)
-    return out.loc[keep, EXTERNAL_COLUMNS].reset_index(drop=True)
+    out = out.loc[keep].reset_index(drop=True)
+    # soft flags: different ChEMBL molecules that standardise to the same connectivity (e.g. stereoisomers) inside one
+    # assay share a key; SI > 1e4 comes from nM-level potency against a large CC50 (kept, but flagged)
+    out["flag_same_key_other_molecule"] = out.duplicated(["ik14", "document_id", "assay_id", "cell_line"], keep=False)
+    out["flag_si_gt_1e4"] = out["SI"] > 1e4
+    return out[EXTERNAL_COLUMNS]
 
 
 def assemble_external(cfg: dict, tables: dict) -> pd.DataFrame:
     frames = []
     if "chembl" in tables:
-        frames.append(assemble_chembl(tables["chembl"]))
+        frames.append(assemble_chembl(tables["chembl"], n_jobs=int(cfg.get("n_jobs", 8))))
     if "pubchem" in tables:
         from .pubchem import assemble_pubchem
 

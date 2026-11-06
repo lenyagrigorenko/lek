@@ -45,14 +45,27 @@ features:
     mqn:        {type: mqn}
     desc:       {type: rdkit_desc}
     meta_num:   {type: meta_num, exclude_prefixes: [s_]}
-    meta_oh:    {type: meta_onehot, min_count: 2, exclude_cols: [c_smiles_start2, c_style_can, c_source_style]}
+    meta_oh:    {type: meta_onehot, min_count: 2, exclude_cols: [c_smiles_start2, c_style_can, c_source_style, c_const]}
     # provenance of the SMILES string (RDKit-canonical = taken from ChEMBL/PubChem, other styles = hand-curated)
     style_num:  {type: meta_num, prefixes: [s_]}
     style_oh:   {type: meta_onehot, min_count: 2, cols: [c_smiles_start2, c_style_can, c_source_style]}
+    style_svd:  {type: smiles_svd, n_components: 24, ngram: [2, 4], min_df: 3}
+    # assay CONDITIONS only (virus species/strain tokens and the normalised cell line): legitimate context of any measurement
+    assay_num:  {type: meta_num, prefixes: [t_]}
+    assay_oh:   {type: meta_onehot, min_count: 2, cols: [c_culture_norm]}
   # Reusable groups of blocks: reference them in a model as `@meta`. Set `style: []` in an experiment config to ablate.
+  #
+  # FEATURE TIERS (see README): the model zoo is tier-agnostic; a tier is chosen by overriding the groups below and
+  # `default_source_col` (see configs/exp/chem.yaml and assay.yaml):
+  #   provenance (default): source strings, Title/SID patterns, SMILES style      -> best leaderboard score
+  #   assay:                chemistry + normalised cell line / virus tokens        -> defensible "experimental context"
+  #   chem:                 chemistry only (standardised structure)                -> pure SMILES -> SI
+  default_source_col: c_source_raw       # what "same source" means for neighbour features / kernels (`@src`)
   groups:
-    meta:  [meta_num, meta_oh]
-    style: [style_num, style_oh]
+    meta:   [meta_num, meta_oh]
+    style:  [style_num, style_oh]
+    meta_n: [meta_num]                   # numeric-only views (CatBoost handles categoricals natively)
+    style_n: [style_num]
   # same for categorical (string) columns given to CatBoost via `cat_cols`
   cat_groups:
     meta:  [c_source_raw, c_source_norm, c_culture_raw, c_title_pat, c_sid5, c_source_title]

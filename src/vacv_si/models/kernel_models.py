@@ -25,7 +25,7 @@ _KCACHE: dict[str, np.ndarray] = {}
 
 
 def composite_kernel(store, kspec: dict) -> np.ndarray:
-    key = f"{id(store)}:{json.dumps(kspec, sort_keys=True)}"
+    key = f"{id(store)}:{store.cfg.get('default_source_col')}:{json.dumps(kspec, sort_keys=True)}"
     if key in _KCACHE:
         return _KCACHE[key]
     K = store.kernel(kspec["base"]).astype(np.float64)
@@ -33,9 +33,9 @@ def composite_kernel(store, kspec: dict) -> np.ndarray:
     if g > 0:
         K = sharpen(K, g)
     for col, a in (kspec.get("mult") or {}).items():
-        K = K * (1.0 + float(a) * same_group_matrix(store.group_codes(col)))
+        K = K * (1.0 + float(a) * same_group_matrix(store.group_codes(store.source_col(col) if col == "@src" else col)))
     for col, b in (kspec.get("add") or {}).items():
-        K = K + float(b) * same_group_matrix(store.group_codes(col))
+        K = K + float(b) * same_group_matrix(store.group_codes(store.source_col(col) if col == "@src" else col))
     if len(_KCACHE) > 64:
         _KCACHE.clear()
     _KCACHE[key] = K

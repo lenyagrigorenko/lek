@@ -1,0 +1,34 @@
+extends: final.yaml
+tag: v3
+
+# Experiments on top of the final zoo: SMILES-style v2 features (inside `@style` / style_num), an n-gram "writing style"
+# embedding (style_svd) and neighbours restricted to the same source *and* SMILES style (c_source_style).
+cv:
+  full_fit_seeds: 0          # no refits while experimenting
+models:
+  clf:
+    et_ap_svd:     {type: extra_trees, blocks: [apc, desc, "@meta", "@style", style_svd], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_all_svd:    {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style", style_svd], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_knn_sty:    {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8], source_col: c_source_style}, params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    et_ap_knn_sty: {type: extra_trees, blocks: [apc, desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8], source_col: c_source_style}, params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+  # ---- raw-scale members for the mean: E[SI | x, non-sentinel] directly (rawns) and the target itself (raw, SI/1e4)
+  rawns:
+    et_all:      {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 3, max_features: 0.2, n_jobs: 1}}
+    et_all_cap:  {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], y_cap: 5000, params: {n_estimators: 800, min_samples_leaf: 3, max_features: 0.2, n_jobs: 1}}
+    et_ap:       {type: extra_trees, blocks: [apc, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 3, max_features: 0.2, n_jobs: 1}}
+    et_ap_cap:   {type: extra_trees, blocks: [apc, desc, "@meta", "@style"], y_cap: 5000, params: {n_estimators: 800, min_samples_leaf: 3, max_features: 0.2, n_jobs: 1}}
+    et_meta:     {type: extra_trees, blocks: ["@meta", "@style"], params: {n_estimators: 500, min_samples_leaf: 3, max_features: 0.3, n_jobs: 1}}
+    et_knn:      {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, params: {n_estimators: 800, min_samples_leaf: 3, max_features: 0.3, n_jobs: 1}}
+    et_knn_cap:  {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, y_cap: 5000, params: {n_estimators: 800, min_samples_leaf: 3, max_features: 0.3, n_jobs: 1}}
+    cat_all:     {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: ["@meta", "@style"], params: {iterations: 400, depth: 4, learning_rate: 0.05, l2_leaf_reg: 10}}
+    cat_all_cap: {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: ["@meta", "@style"], y_cap: 5000, params: {iterations: 400, depth: 4, learning_rate: 0.05, l2_leaf_reg: 10}}
+    lgbm_all:    {type: lightgbm, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, learning_rate: 0.03, num_leaves: 6, min_child_samples: 5, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.3, reg_lambda: 10.0}}
+    xgb_all:     {type: xgboost, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, max_depth: 3, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 2, reg_lambda: 10.0}}
+  raw:
+    et_all:      {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 2, max_features: 0.2, n_jobs: 1}}
+    et_ap:       {type: extra_trees, blocks: [apc, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 2, max_features: 0.2, n_jobs: 1}}
+    et_meta:     {type: extra_trees, blocks: ["@meta", "@style"], params: {n_estimators: 500, min_samples_leaf: 2, max_features: 0.3, n_jobs: 1}}
+    et_knn:      {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, params: {n_estimators: 800, min_samples_leaf: 2, max_features: 0.3, n_jobs: 1}}
+    cat_all:     {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: ["@meta", "@style"], params: {iterations: 400, depth: 4, learning_rate: 0.05, l2_leaf_reg: 10}}
+    lgbm_all:    {type: lightgbm, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, learning_rate: 0.03, num_leaves: 6, min_child_samples: 5, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.3, reg_lambda: 10.0}}
+    xgb_all:     {type: xgboost, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, max_depth: 3, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 2, reg_lambda: 10.0}}

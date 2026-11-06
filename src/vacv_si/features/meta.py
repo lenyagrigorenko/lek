@@ -112,7 +112,32 @@ def smiles_style_features(smiles_raw: pd.Series) -> pd.DataFrame:
         can_flat = Chem.MolToSmiles(m, isomericSmiles=False) if m is not None else ""
         body = re.sub(r"\[[^\]]*\]", "X", s)           # drop bracket atoms to count organic-subset letters
         n = max(len(s), 1)
+        kek = ""
+        if m is not None:
+            try:
+                mk = Chem.Mol(m)
+                Chem.Kekulize(mk, clearAromaticFlags=True)
+                kek = Chem.MolToSmiles(mk, kekuleSmiles=True)
+            except Exception:
+                kek = ""
+        digits = re.findall(r"\d", body)
+        depth = mx = 0
+        for ch in s:
+            depth += ch == "("
+            depth -= ch == ")"
+            mx = max(mx, depth)
+        frac = {f"s_frac_{nm}": s.count(ch) / n for nm, ch in [("eq", "="), ("hash", "#"), ("paren", "("), ("at", "@"), ("slash", "/"),
+                                                              ("bslash", "\\"), ("brk", "["), ("plus", "+"), ("minus", "-"), ("dot", ".")]}
         rows.append({
+            **frac,
+            "s_kekule_match": float(kek == s),
+            "s_max_paren_depth": float(mx),
+            "s_digit_reuse": float(len(digits) / 2 > max([int(c) for c in digits] or [0])),
+            "s_first_ring_digit": float(next((int(c) for c in digits), 0)),
+            "s_ends_ring_digit": float(s[-1:].isdigit()),
+            "s_ends_paren": float(s.endswith(")")),
+            "s_starts_N": float(s.startswith("N")),
+            "s_starts_c": float(s.startswith("c")),
             "s_is_rdkit_can": float(can_iso == s),
             "s_is_rdkit_can_flat": float(can_flat == s),
             "s_starts_C1": float(s.startswith("C1")),
@@ -161,6 +186,7 @@ def build_meta(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     cat["c_source_title"] = cat["c_source_norm"] + " || " + cat["c_title_pat"]
     raw_smi = df["smiles_raw"].fillna("").astype(str) if "smiles_raw" in df.columns else pd.Series("", index=df.index)
     cat["c_smiles_start2"] = raw_smi.str.slice(0, 2)
+    cat["c_const"] = "all"                                  # single group: "no source information" (chemistry-only tier)
 
     num = pd.DataFrame(index=df.index)
     # raw-string quirks (identify the data-entry batch)

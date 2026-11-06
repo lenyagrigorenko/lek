@@ -25,8 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 # LightGBM / XGBoost need the OpenMP runtime on macOS:  brew install libomp
 gbm = ["lightgbm", "xgboost"]
-chem = ["mordredcommunity"]
-external = ["chembl_webresource_client", "pubchempy"]
+chem = ["mordredcommunity"]       # optional heavy descriptor block `mordred_desc` (not used by the final configs)
 dev = ["pytest", "pyarrow"]
 
 [project.scripts]

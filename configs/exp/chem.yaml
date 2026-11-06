@@ -1,0 +1,14 @@
+extends: final.yaml
+tag: chem
+
+# TIER "chemistry only": the model sees nothing but the standardised molecular structure (fingerprints, descriptors,
+# Tanimoto neighbours, external ChEMBL molecules as extra neighbours/rows). No Title, no strain/Culture, no SMILES style.
+features:
+  default_source_col: c_const
+  groups: {meta: [], style: [], meta_n: [], style_n: []}
+  cat_groups: {meta: [], style: []}
+models:
+  clf:
+    et_meta: {enabled: false}      # models that only use source information have no inputs in this tier
+  reg:
+    et_meta: {enabled: false}

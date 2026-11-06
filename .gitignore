@@ -22,6 +22,8 @@ data/external/raw/
 # keep the final submission under version control, drop scratch ones
 submissions/*
 !submissions/submission.csv
+!submissions/submission_assay.csv
+!submissions/submission_chem.csv
 
 # local-only
 .pytest_cache/

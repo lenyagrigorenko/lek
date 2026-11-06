@@ -45,7 +45,7 @@ class MatrixModel(BaseModel):
     def _knn_block(self, idx: np.ndarray, training: bool) -> np.ndarray:
         """Neighbour-label features, computed separately for every reference pool (competition rows / external rows)."""
         ks, store = self.knn_spec, self.store
-        codes = store.group_codes(ks.get("source_col", "c_source_raw"))
+        codes = store.group_codes(store.source_col(ks.get("source_col")))
         ik = store.molecule_codes()
         split = store.df["split"].values
         ref_idx, ref_y = self._ref["all_idx"], self._ref["all_y"]

@@ -27,13 +27,13 @@ from ..chem.descriptors import rdkit_descriptors
 from ..chem.kernels import minmax_kernel
 from ..chem.standardize import mols_from_std
 from ..data.schema import assert_no_forbidden
-from ..paths import FEATURE_CACHE
+from ..paths import FEATURE_CACHE, resolve
 from .meta import build_meta
 
 log = logging.getLogger(__name__)
 
 # Bump when the *code* that builds a block changes (the on-disk cache and every stored model hash include it).
-FEATURE_CODE_VERSION = "3-smiles-style"
+FEATURE_CODE_VERSION = "4-style-v2"
 
 BLOCK_BUILDERS: dict[str, Callable] = {}
 
@@ -44,6 +44,14 @@ def register_block(name: str):
         return fn
 
     return deco
+
+
+def _file_signature(path) -> list | None:
+    """(mtime, size) of an input file of a block, so that replacing the file invalidates the cache."""
+    if not path:
+        return None
+    p = resolve(path)
+    return [p.stat().st_mtime_ns, p.stat().st_size] if p.exists() else None
 
 
 def _digest(*parts) -> str:
@@ -105,7 +113,7 @@ class FeatureStore:
         if typ not in BLOCK_BUILDERS:
             raise KeyError(f"unknown block type {typ!r}; known: {sorted(BLOCK_BUILDERS)}")
         key_src = self._text_key if typ.startswith("meta") else self._smiles_key
-        key = _digest(key_src, typ, spec, FEATURE_CODE_VERSION)
+        key = _digest(key_src, typ, spec, FEATURE_CODE_VERSION, _file_signature(spec.get("path")))
         npy, js = self.cache_dir / f"{name}-{key}.npy", self.cache_dir / f"{name}-{key}.json"
         if npy.exists() and js.exists():
             X, names = np.load(npy), json.loads(js.read_text())
@@ -159,6 +167,12 @@ class FeatureStore:
     def cat_frame(self, cols: Optional[list[str]] = None) -> pd.DataFrame:
         cat, _ = self.meta()
         return cat if cols is None else cat[cols]
+
+    def source_col(self, col: str | None = None) -> str:
+        """Column that defines "the same source". `@src` / None -> features.default_source_col (tier switch)."""
+        if col in (None, "@src"):
+            return self.cfg.get("default_source_col", "c_source_raw")
+        return col
 
     def molecule_codes(self) -> np.ndarray:
         """Integer id of the molecule (InChIKey connectivity layer); -1 where standardisation failed."""
@@ -229,6 +243,50 @@ def _meta_onehot(store: FeatureStore, params: dict):
     oh = pd.get_dummies(cat[cols], dtype=np.float32)
     oh = oh.loc[:, oh.sum(axis=0) >= min_count]
     return oh.values, list(oh.columns)
+
+
+@register_block("smiles_svd")
+def _smiles_svd(store: FeatureStore, params: dict):
+    """Character n-grams of the RAW SMILES string -> TF-IDF -> truncated SVD: a data-driven 'writing style' embedding."""
+    from sklearn.decomposition import TruncatedSVD
+    from sklearn.feature_extraction.text import TfidfVectorizer
+
+    raw = store.df["smiles_raw"].fillna("").astype(str)
+    lo, hi = params.get("ngram", [2, 4])
+    X = TfidfVectorizer(analyzer="char", ngram_range=(int(lo), int(hi)), min_df=int(params.get("min_df", 3)),
+                        sublinear_tf=True, lowercase=False).fit_transform(raw)
+    k = int(params.get("n_components", 24))
+    Z = TruncatedSVD(n_components=min(k, X.shape[1] - 1), random_state=0).fit_transform(X)
+    return Z, [f"smiles_svd_{i}" for i in range(Z.shape[1])]
+
+
+@register_block("npz_embedding")
+def _npz_embedding(store: FeatureStore, params: dict):
+    """Embeddings computed elsewhere (e.g. pretrained chemical language models on a GPU: scripts/colab_embeddings.py).
+
+    The .npz holds `smiles` (standardised SMILES, unique) and `emb` (n x d); rows are matched by standardised SMILES, so
+    rebuilding the tables never misaligns them. Molecules without an embedding get zeros (a warning is logged).
+    `pca: k` keeps the k leading principal components (recommended for tree models).
+    """
+    z = np.load(resolve(params["path"]), allow_pickle=True)
+    pos = {str(smi): i for i, smi in enumerate(z["smiles"])}
+    E = np.asarray(z[params.get("key", "emb")], dtype=np.float32)
+    out = np.zeros((len(store.df), E.shape[1]), dtype=np.float32)
+    miss = 0
+    for r, smi in enumerate(store.df["smiles_std"]):
+        k = pos.get(smi)
+        if k is None:
+            miss += 1
+        else:
+            out[r] = E[k]
+    if miss:
+        log.warning("npz_embedding %s: %d of %d molecules have no embedding", params["path"], miss, len(out))
+    k = int(params.get("pca", 0))
+    if k:
+        X = out - out.mean(0)
+        U, S, _ = np.linalg.svd(X, full_matrices=False)
+        out = (U[:, :k] * S[:k]).astype(np.float32)
+    return out, [f"emb_{i}" for i in range(out.shape[1])]
 
 
 @register_block("mordred_desc")

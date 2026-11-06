@@ -64,6 +64,60 @@ def nested_scores_clf(P: np.ndarray, y: np.ndarray, fit_fn, n_splits: int = 5, n
     return np.asarray(out)
 
 
+class IsoMeanBlend:
+    """Mean of selected models followed by a monotone (isotonic) recalibration, clipped away from 0 and 1."""
+
+    def __init__(self, cols):
+        self.cols = cols
+
+    def fit(self, P, y):
+        self.iso = IsotonicRegression(y_min=0.002, y_max=0.998, out_of_bounds="clip").fit(P[:, self.cols].mean(1), y)
+        return self
+
+    def predict(self, P):
+        return self.iso.predict(P[:, self.cols].mean(1))
+
+
+class TopKMeanBlend:
+    """Rank models by Brier on the data it is fitted on, average the k best (selection is part of the fit)."""
+
+    def __init__(self, k: int):
+        self.k = k
+
+    def fit(self, P, y):
+        self.cols = list(np.argsort(((P - np.asarray(y)[:, None]) ** 2).mean(0))[: self.k])
+        return self
+
+    def predict(self, P):
+        return P[:, self.cols].mean(1)
+
+
+class TopKIsoBlend(TopKMeanBlend):
+    """Top-k mean followed by a monotone (isotonic) recalibration, clipped away from 0 and 1."""
+
+    def fit(self, P, y):
+        super().fit(P, y)
+        self.iso = IsotonicRegression(y_min=0.002, y_max=0.998, out_of_bounds="clip").fit(P[:, self.cols].mean(1), y)
+        return self
+
+    def predict(self, P):
+        return self.iso.predict(P[:, self.cols].mean(1))
+
+
+class TopKRegMean:
+    """Regression analogue: the k models with the lowest squared error on the fitting data, averaged."""
+
+    def __init__(self, k: int):
+        self.k = k
+
+    def fit(self, R, y):
+        self.cols = list(np.argsort(((R - np.asarray(y)[:, None]) ** 2).mean(0))[: self.k])
+        return self
+
+    def predict(self, R):
+        return R[:, self.cols].mean(1)
+
+
 class MeanBlend:
     """Plain average of probabilities of a fixed model subset (no fitting)."""
 
@@ -114,6 +168,27 @@ class Smearing:
     def fit(self, mu, si, groups=None):
         res = np.log10(np.clip(si, 1e-2, None)) - mu
         self.s = float(np.mean(10 ** res))
+        return self
+
+    def __call__(self, mu, groups=None):
+        return (10 ** np.asarray(mu)) * self.s
+
+
+class RobustSmearing:
+    """Duan smearing with a winsorised residual factor.
+
+    S = mean(min(10^res, q-quantile of 10^res)): one extreme residual (a single SI = 36 066 record) must not
+    inflate the retransformation factor of every other molecule. `cap_si` additionally caps SI before the residual
+    is computed (consistent with training the raw-scale models on a capped target).
+    """
+
+    def __init__(self, q: float = 0.98, cap_si: float | None = None):
+        self.q, self.cap_si = q, cap_si
+
+    def fit(self, mu, si, groups=None):
+        y = np.minimum(si, self.cap_si) if self.cap_si else si
+        w = 10 ** (np.log10(np.clip(y, 1e-2, None)) - np.asarray(mu))
+        self.s = float(np.minimum(w, np.quantile(w, self.q)).mean()) if self.q < 1 else float(w.mean())
         return self
 
     def __call__(self, mu, groups=None):
@@ -186,6 +261,10 @@ RETRANSFORMS = {
     "iso_cap": lambda: IsoMean(cap=5000.0),
     "power": lambda: PowerMean(),
     "power_cap": lambda: PowerMean(cap=5000.0),
+    "smear_w98": lambda: RobustSmearing(0.98),
+    "smear_w95": lambda: RobustSmearing(0.95),
+    "smear_cap5000": lambda: RobustSmearing(1.0, cap_si=5000.0),
+    "smear_cap10000": lambda: RobustSmearing(1.0, cap_si=10000.0),
     "gsmear4": lambda: GroupSmearing(4.0),
     "gsmear10": lambda: GroupSmearing(10.0),
     "gsmear25": lambda: GroupSmearing(25.0),

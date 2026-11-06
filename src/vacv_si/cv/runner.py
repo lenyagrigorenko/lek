@@ -27,7 +27,7 @@ from ..features.store import FEATURE_CODE_VERSION, FeatureStore
 from ..models import build_model
 from ..paths import OOF_DIR, ensure_dirs
 from .folds import Fold, make_fold_plan
-from .metrics import clf_metrics, proxy_raw_mse, reg_metrics
+from .metrics import clf_metrics, mse, proxy_raw_mse, reg_metrics
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +78,8 @@ def model_hash(task: str, spec: dict, cfg: dict, store: FeatureStore) -> str:
         "task": task,
         "spec": spec,
         "feat": _referenced_feature_specs(spec, cfg["features"]),
+        "tier": {"src": cfg["features"].get("default_source_col"), "groups": cfg["features"].get("groups"),
+                 "cat_groups": cfg["features"].get("cat_groups")},
         "cv": cfg["cv"],
         "ext": cfg.get("external", {}),
         "seed": cfg.get("seed", 0),
@@ -101,15 +103,36 @@ def _warm(store: FeatureStore, spec: dict) -> None:
     if spec.get("knn"):
         for kname in spec["knn"].get("kernels") or [spec["knn"]["kernel"]]:
             store.kernel(kname)
-        store.group_codes(spec["knn"].get("source_col", "c_source_raw"))
+        store.group_codes(store.source_col(spec["knn"].get("source_col")))
 
 
 # ------------------------------------------------------------------------------------------------------------------ one CV
+RAW_SCALE = 1e4          # task `raw` predicts SI / 1e4 (well scaled for every model family)
+TASKS = ("clf", "reg", "rawns", "raw")
+
+
 def _label(df: pd.DataFrame, task: str) -> np.ndarray:
-    return (df["is_sentinel"] if task == "clf" else df["log_si"]).values.astype(float)
+    """Training label of a task (NaN = row is not used for that task).
+
+    clf    P(SI == 10000)                           all labelled rows
+    reg    log10(SI) of non-sentinel records        (E[SI | x, non-sentinel] after retransformation)
+    rawns  raw SI of non-sentinel records           (E[SI | x, non-sentinel] directly, heavy tailed)
+    raw    raw SI / 1e4 of every record             (the competition target itself)
+    """
+    if task == "clf":
+        return df["is_sentinel"].values.astype(float)
+    if task == "reg":
+        return df["log_si"].values.astype(float)
+    si = df["si"].values.astype(float)
+    if task == "rawns":
+        return np.where(df["is_sentinel"].values == 0.0, si, np.nan)
+    if task == "raw":
+        return si / RAW_SCALE
+    raise KeyError(f"unknown task {task!r}")
 
 
-def _fit_rows(store: FeatureStore, task: str, fold: Fold, ext_rows: np.ndarray, test_rows: np.ndarray, cfg: dict):
+def _fit_rows(store: FeatureStore, task: str, fold: Fold, ext_rows: np.ndarray, test_rows: np.ndarray, cfg: dict,
+              y_cap=None):
     """Rows to train on (+ optional reference-only rows) for one fold.
 
     external.mode = train_rows      external records are ordinary (down-weighted) training rows
@@ -128,6 +151,9 @@ def _fit_rows(store: FeatureStore, task: str, fold: Fold, ext_rows: np.ndarray, 
         keep_ext = ext_rows[keep]
     lab = _label(df, task)
     ref = None
+    cap = None if y_cap is None else float(y_cap) / (RAW_SCALE if task == "raw" else 1.0)
+    if cap is not None:                                       # winsorise heavy-tailed raw targets (spec: y_cap, in SI units)
+        lab = np.minimum(lab, cap)
     if len(keep_ext) and ext_cfg.get("mode", "train_rows") == "reference_only":
         ok_r = np.isfinite(lab[keep_ext])
         ref = (keep_ext[ok_r], lab[keep_ext][ok_r])
@@ -192,7 +218,7 @@ def run_cv_one(task: str, name: str, spec: dict, store: FeatureStore, plan: list
     spec_run = _prepare_spec(spec, cfg)
 
     def job(j: int, fold: Fold):
-        rows, y, w, ref = _fit_rows(store, task, fold, ext_rows, test_rows, cfg)
+        rows, y, w, ref = _fit_rows(store, task, fold, ext_rows, test_rows, cfg, y_cap=spec.get("y_cap"))
         model = build_model(store, task, spec_run, seed=seed0 + 1000 * fold.repeat + fold.fold)
         model.fit(rows, y, w, ref=ref)
         return j, model.predict(fold.val), model.predict(test_rows)
@@ -216,7 +242,7 @@ def run_cv_one(task: str, name: str, spec: dict, store: FeatureStore, plan: list
         full_fold = Fold(repeat=0, fold=-1, train=train_rows, val=np.zeros(0, dtype=np.int64))
 
         def job_full(s_i: int):
-            rows, y, w, ref = _fit_rows(store, task, full_fold, ext_rows, test_rows, cfg)
+            rows, y, w, ref = _fit_rows(store, task, full_fold, ext_rows, test_rows, cfg, y_cap=spec.get("y_cap"))
             model = build_model(store, task, spec_run, seed=seed0 + 777 + 31 * s_i)
             model.fit(rows, y, w, ref=ref)
             return model.predict(test_rows)
@@ -244,6 +270,19 @@ def summarize(task: str, name: str, oof: np.ndarray, df: pd.DataFrame, train_row
         bag = clf_metrics(y_s, mean_oof)
         bag["proxy_mse"] = proxy_raw_mse(si, mean_oof, m0)
         agg.update({"bag_" + k: v for k, v in bag.items()})
+    elif task == "rawns":
+        yv = si[ns]
+        for r in range(oof.shape[0]):
+            per_rep.append({"mse_ns": mse(yv, oof[r][ns])})
+        agg = {"mse_ns": float(np.mean([m["mse_ns"] for m in per_rep]))}
+        sd = {"mse_ns_sd": float(np.std([m["mse_ns"] for m in per_rep]))}
+        agg["bag_mse_ns"] = mse(yv, mean_oof[ns])
+    elif task == "raw":
+        for r in range(oof.shape[0]):
+            per_rep.append({"mse": mse(si, oof[r] * RAW_SCALE)})
+        agg = {"mse": float(np.mean([m["mse"] for m in per_rep]))}
+        sd = {"mse_sd": float(np.std([m["mse"] for m in per_rep]))}
+        agg["bag_mse"] = mse(si, mean_oof * RAW_SCALE)
     else:
         ly = df["log_si"].values[train_rows][ns]
         for r in range(oof.shape[0]):
@@ -273,7 +312,7 @@ def run_experiments(cfg: dict, tasks: Optional[list[str]] = None, only: Optional
     out_root = exp_dir(cfg)
     log.info("tag=%s | rows=%d (train=%d test=%d ext=%d) | folds=%d", exp_tag(cfg), len(store.df),
              (store.df.split == "train").sum(), (store.df.split == "test").sum(), (store.df.split == "ext").sum(), len(plan))
-    for task in tasks or [t for t in cfg["models"] if t in ("clf", "reg")]:
+    for task in tasks or [t for t in cfg["models"] if t in TASKS]:
         for name, spec in (cfg["models"].get(task) or {}).items():
             if only and name not in only:
                 continue
@@ -294,9 +333,13 @@ def run_experiments(cfg: dict, tasks: Optional[list[str]] = None, only: Optional
             if task == "clf":
                 print(f"[clf/{name:18s}] auc={m['auc']:.4f} brier={m['brier']:.4f} logloss={m['logloss']:.4f} "
                       f"proxy_mse={m['proxy_mse']/1e6:7.2f}M (bag {m['bag_proxy_mse']/1e6:7.2f}M)  {res['summary']['seconds']}s", flush=True)
-            else:
+            elif task == "reg":
                 print(f"[reg/{name:18s}] rmse_log={m['rmse_log']:.4f} mae={m['mae_log']:.4f} spearman={m['spearman']:.4f} "
                       f"(bag rmse {m['bag_rmse_log']:.4f})  {res['summary']['seconds']}s", flush=True)
+            elif task == "rawns":
+                print(f"[rawns/{name:16s}] mse_ns={m['mse_ns']/1e6:8.3f}M (bag {m['bag_mse_ns']/1e6:8.3f}M)  {res['summary']['seconds']}s", flush=True)
+            else:
+                print(f"[raw/{name:19s}] mse={m['mse']/1e6:8.3f}M (bag {m['bag_mse']/1e6:8.3f}M)  {res['summary']['seconds']}s", flush=True)
     print_leaderboard(cfg)
 
 
@@ -314,13 +357,18 @@ def print_leaderboard(cfg: dict) -> None:
         print("no stored models yet")
         return
     pd.set_option("display.width", 200)
-    for task, key, cols in [("clf", "proxy_mse", ["name", "auc", "brier", "logloss", "proxy_mse", "bag_proxy_mse", "proxy_mse_sd"]),
-                            ("reg", "rmse_log", ["name", "rmse_log", "mae_log", "spearman", "bag_rmse_log", "rmse_log_sd"])]:
-        sub = t[t.task == task].sort_values(key)
+    tables = [("clf", "proxy_mse", ["name", "auc", "brier", "logloss", "proxy_mse", "bag_proxy_mse", "proxy_mse_sd"]),
+              ("reg", "rmse_log", ["name", "rmse_log", "mae_log", "spearman", "bag_rmse_log", "rmse_log_sd"]),
+              ("rawns", "mse_ns", ["name", "mse_ns", "bag_mse_ns", "mse_ns_sd"]),
+              ("raw", "mse", ["name", "mse", "bag_mse", "mse_sd"])]
+    for task, key, cols in tables:
+        if key not in t.columns:
+            continue
+        sub = t[t.task == task].dropna(subset=[key]).sort_values(key)
         if len(sub):
             print(f"\n=== {task.upper()} leaderboard ({exp_tag(cfg)}) ===")
-            show = sub[cols].copy()
-            for c in ("proxy_mse", "bag_proxy_mse", "proxy_mse_sd"):
+            show = sub[[c for c in cols if c in sub.columns]].copy()
+            for c in ("proxy_mse", "bag_proxy_mse", "proxy_mse_sd", "mse_ns", "bag_mse_ns", "mse_ns_sd", "mse", "bag_mse", "mse_sd"):
                 if c in show:
-                    show[c] = (show[c] / 1e6).round(2)
+                    show[c] = (show[c] / 1e6).round(3)
             print(show.round(4).to_string(index=False))

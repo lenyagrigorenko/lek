@@ -77,6 +77,8 @@ def _external_frame(path: Path) -> pd.DataFrame:
     )
     # a record with a CC50 but no antiviral IC50 is the analogue of the competition sentinel (SI := 10000)
     out["_ic50_missing"] = ext["ic50_missing"].fillna(False).astype(bool).values if "ic50_missing" in ext.columns else False
+    # CC50 taken from another cell line of the same paper (see data/external/README.md); True when unknown
+    out["_cc50_same_cell"] = ext["cc50_same_cell"].fillna(True).astype(bool).values if "cc50_same_cell" in ext.columns else True
     return out
 
 
@@ -102,6 +104,10 @@ def build_all_table(cfg: dict, use_external: Optional[bool] = None) -> pd.DataFr
     if bad.any():
         log.warning("%d molecules failed standardisation (%s)", bad.sum(), df.loc[bad, "split"].value_counts().to_dict())
 
+    if "_cc50_same_cell" in df.columns:
+        if cfg.get("external", {}).get("require_same_cell", False):      # strict variant: CC50 only from the assay's own cell line
+            df = df[(df["split"] != "ext") | df["_cc50_same_cell"].fillna(True).astype(bool)].reset_index(drop=True)
+        df = df.drop(columns=["_cc50_same_cell"])
     # ---- targets ----------------------------------------------------------------------------------------------
     ext_mask = df["split"] == "ext"
     if "_ic50_missing" in df.columns:
@@ -127,7 +133,10 @@ def processed_path(tag: str = "all") -> Path:
 
 def load_all_table(cfg: dict, rebuild: bool = False) -> pd.DataFrame:
     use_ext = bool(cfg.get("external", {}).get("use", False))
-    tag = "all_ext" if use_ext else "all"
+    ecfg = cfg.get("external", {})
+    tag = "all"
+    if use_ext:                                    # variants of the external table are cached separately
+        tag = "all_ext" + ("" if ecfg.get("sentinel_from_missing_ic50", True) else "_nomiss") + ("_samecell" if ecfg.get("require_same_cell") else "")
     path = processed_path(tag)
     ext_path = resolve(cfg.get("paths", {}).get("external_csv", "data/external/vacv_external.csv"))
     stale = path.exists() and use_ext and ext_path.exists() and ext_path.stat().st_mtime > path.stat().st_mtime

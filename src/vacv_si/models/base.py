@@ -19,7 +19,7 @@ from ..features.store import FeatureStore
 
 class BaseModel:
     def __init__(self, store: FeatureStore, task: str, spec: dict, seed: int = 0):
-        assert task in ("clf", "reg"), task
+        assert task in ("clf", "reg", "rawns", "raw"), task
         self.store, self.task, self.spec, self.seed = store, task, spec, seed
         self.params = dict(spec.get("params") or {})
 

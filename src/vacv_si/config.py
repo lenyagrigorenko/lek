@@ -1,6 +1,6 @@
 """YAML configs with inheritance (`extends:`) and dotted command-line overrides.
 
-    cfg = load_config("configs/exp/fast.yaml", overrides=["cv.n_repeats=2", "external.use=true"])
+    cfg = load_config("configs/exp/final.yaml", overrides=["cv.n_repeats=2", "external.use=false"])
 """
 from __future__ import annotations
 

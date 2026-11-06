@@ -29,6 +29,69 @@
  "si_gt_1e4": 8,
  "implausible_ic50(<1e-6 or >1e6 uM)": 0,
  "duplicated_keys": 32,
+ "rows_sharing_a_key_with_another_molecule": 92,
+ "same_key_pairs_have_distinct_chembl_ids": false,
+ "same_key_pairs_differ_in_full_inchikey": 0.5166666666666667,
+ "cc50_from_same_cell_line_share": 0.77,
+ "rows_with_cc50_from_other_cell_line": 564,
+ "si_gt_1e4_rows": [
+  {
+   "record_id": "CHEMBL1258896",
+   "doi": "10.1021/jm901828c",
+   "IC50_uM": 0.00074,
+   "CC50_uM": 161.0,
+   "SI": 217567.57
+  },
+  {
+   "record_id": "CHEMBL5269665",
+   "doi": "10.1016/j.bmcl.2022.129080",
+   "IC50_uM": 0.0076,
+   "CC50_uM": 1193.4,
+   "SI": 157026.32
+  },
+  {
+   "record_id": "CHEMBL5269665",
+   "doi": "10.1039/d4md00181h",
+   "IC50_uM": 0.008,
+   "CC50_uM": 1193.4,
+   "SI": 149175.0
+  },
+  {
+   "record_id": "CHEMBL485653",
+   "doi": "10.1039/d0md00108b",
+   "IC50_uM": 0.01,
+   "CC50_uM": 1276.0,
+   "SI": 127600.0
+  },
+  {
+   "record_id": "CHEMBL1257073",
+   "doi": "10.1016/j.ejmech.2021.113485",
+   "IC50_uM": 0.00266,
+   "CC50_uM": 266.0,
+   "SI": 100000.0
+  },
+  {
+   "record_id": "CHEMBL1255998",
+   "doi": "10.1021/jm901828c",
+   "IC50_uM": 0.00074,
+   "CC50_uM": 18.84,
+   "SI": 25459.459
+  },
+  {
+   "record_id": "CHEMBL1258440",
+   "doi": "10.1021/jm901828c",
+   "IC50_uM": 0.0012,
+   "CC50_uM": 23.0,
+   "SI": 19166.667
+  },
+  {
+   "record_id": "CHEMBL1258328",
+   "doi": "10.1021/jm901828c",
+   "IC50_uM": 0.0026,
+   "CC50_uM": 30.0,
+   "SI": 11538.462
+  }
+ ],
  "molecules_also_in_train": 161,
  "molecules_also_in_test": 324,
  "frac_train_covered": 0.503,
@@ -39,5 +102,16 @@
   "non_sentinel_within_x2": 125,
   "sentinel_matched": 26,
   "sentinel_with_missing_ic50_record": 13
+ },
+ "sentinel_rule_check": {
+  "molecules_with_only_valueless_records": 14,
+  "of_which_sentinel_in_train": 13,
+  "precision": 0.929,
+  "wilson95": [
+   0.685,
+   0.987
+  ],
+  "rows_in_dataset_relying_on_rule": 667,
+  "note": "the rule is verified on few molecules only; set external.sentinel_from_missing_ic50=false to drop these rows"
  }
 }
