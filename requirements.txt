@@ -1,0 +1,15 @@
+# Minimal dependencies (exact versions the results were produced with: requirements-lock.txt)
+numpy
+pandas
+scipy
+scikit-learn
+rdkit
+pyyaml
+joblib
+tqdm
+requests
+catboost
+lightgbm        # macOS: needs the OpenMP runtime ->  conda install llvm-openmp   (or: brew install libomp)
+xgboost         # same remark
+matplotlib
+pytest

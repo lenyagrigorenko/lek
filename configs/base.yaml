@@ -1,0 +1,66 @@
+# Base configuration. Experiments live in configs/exp/*.yaml and `extends: ../base.yaml`.
+seed: 42
+n_jobs: 8
+
+paths:
+  raw_dir: data/raw
+  external_csv: data/external/vacv_external.csv
+
+data:
+  standardize: {keep_largest_fragment: true, neutralize: true, canonical_tautomer: false}
+
+# ---- external (open-database) data -------------------------------------------------------------------------------
+external:
+  use: false                      # add collected records to the *training* folds (never to validation folds)
+  weight: 0.3                     # sample weight of external rows relative to competition rows
+  # Integrity switch: drop every external record whose molecule (InChIKey connectivity layer) is also a
+  # validation molecule in CV, or a TEST molecule when fitting for the submission. true = we never "look up" the
+  # measured values of test molecules in public databases. See README -> "Integrity".
+  drop_overlap_with_eval: true
+
+# ---- cross-validation -------------------------------------------------------------------------------------------
+cv:
+  n_splits: 5
+  n_repeats: 4
+  seed: 42
+  stratify: sentinel_source      # sentinel x (frequent) source group
+  parallel: threads              # threads | processes
+  full_fit_seeds: 3              # refits on 100% of the training rows (test predictions of the final submission)
+
+# ---- features -----------------------------------------------------------------------------------------------------
+features:
+  blocks:
+    morgan2c:   {type: morgan_counts, radius: 2, n_bits: 2048}
+    morgan2l:   {type: morgan_counts, radius: 2, n_bits: 2048, log1p: true}      # for linear models
+    morgan3c:   {type: morgan_counts, radius: 3, n_bits: 2048}
+    morgan1c:   {type: morgan_counts, radius: 1, n_bits: 1024}
+    fmorgan2c:  {type: morgan_counts, radius: 2, n_bits: 1024, feature: true}
+    morgan2s:   {type: morgan_counts, radius: 2, n_bits: 2048, chirality: true}
+    apc:        {type: atom_pair_counts, n_bits: 2048}
+    ttc:        {type: torsion_counts, n_bits: 1024}
+    rdkp:       {type: rdkit_path_counts, n_bits: 2048, max_path: 6}
+    avalon:     {type: avalon_counts, n_bits: 1024}
+    maccs:      {type: maccs}
+    erg:        {type: erg}
+    mqn:        {type: mqn}
+    desc:       {type: rdkit_desc}
+    meta_num:   {type: meta_num, exclude_prefixes: [s_]}
+    meta_oh:    {type: meta_onehot, min_count: 2, exclude_cols: [c_smiles_start2, c_style_can, c_source_style]}
+    # provenance of the SMILES string (RDKit-canonical = taken from ChEMBL/PubChem, other styles = hand-curated)
+    style_num:  {type: meta_num, prefixes: [s_]}
+    style_oh:   {type: meta_onehot, min_count: 2, cols: [c_smiles_start2, c_style_can, c_source_style]}
+  # Reusable groups of blocks: reference them in a model as `@meta`. Set `style: []` in an experiment config to ablate.
+  groups:
+    meta:  [meta_num, meta_oh]
+    style: [style_num, style_oh]
+  # same for categorical (string) columns given to CatBoost via `cat_cols`
+  cat_groups:
+    meta:  [c_source_raw, c_source_norm, c_culture_raw, c_title_pat, c_sid5, c_source_title]
+    style: [c_smiles_start2, c_style_can, c_source_style]
+  kernels:
+    k_m2:  {block: morgan2c}
+    k_m3:  {block: morgan3c}
+    k_m1:  {block: morgan1c}
+    k_ap:  {block: apc}
+    k_rdk: {block: rdkp}
+    k_s2:  {block: morgan2s}

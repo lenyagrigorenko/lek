@@ -1,0 +1,16 @@
+extends: main.yaml
+tag: main            # same result directory as main.yaml: the ensemble picks these models up automatically
+
+# LightGBM / XGBoost (need the OpenMP runtime; run from the conda env `myenv`, see README). Small, strongly regularised
+# trees on ~300 rows: shallow depth, heavy column subsampling.
+models:
+  clf:
+    lgbm_all:  {type: lightgbm, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, learning_rate: 0.03, num_leaves: 8, min_child_samples: 5, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.3, reg_lambda: 5.0}}
+    lgbm_knn:  {type: lightgbm, blocks: [desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {n_estimators: 300, learning_rate: 0.03, num_leaves: 8, min_child_samples: 5, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.3, reg_lambda: 5.0}}
+    xgb_all:   {type: xgboost, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, max_depth: 4, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 1, reg_lambda: 5.0}}
+    xgb_knn:   {type: xgboost, blocks: [desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {n_estimators: 300, max_depth: 4, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 1, reg_lambda: 5.0}}
+  reg:
+    lgbm_all:  {type: lightgbm, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, learning_rate: 0.03, num_leaves: 8, min_child_samples: 5, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.3, reg_lambda: 5.0}}
+    lgbm_knn:  {type: lightgbm, blocks: [desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {n_estimators: 300, learning_rate: 0.03, num_leaves: 8, min_child_samples: 5, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.3, reg_lambda: 5.0}}
+    xgb_all:   {type: xgboost, blocks: [desc, maccs, "@meta", "@style"], params: {n_estimators: 300, max_depth: 4, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 1, reg_lambda: 5.0}}
+    xgb_knn:   {type: xgboost, blocks: [desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {n_estimators: 300, max_depth: 4, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 1, reg_lambda: 5.0}}

@@ -1,0 +1,10 @@
+extends: main.yaml
+tag: ext_ref
+
+# External records are used ONLY as a separate pool of neighbours (extra neighbour-label features); every model is
+# trained on competition rows. Strict integrity policy: molecules that are validation/test molecules are removed
+# from the pool, and "same molecule" pairs are masked for training rows as well, so train- and test-time features agree.
+external:
+  use: true
+  mode: reference_only
+  drop_overlap_with_eval: true

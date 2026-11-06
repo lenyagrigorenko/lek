@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+*.egg-info/
+
+# heavy / regenerable artefacts
+data/cache/
+data/processed/
+artifacts/
+*.npy
+*.npz
+
+# Kaggle competition files are not redistributed: put train.csv / test.csv / sample_submit.csv into data/raw/
+data/raw/*.csv
+molecular-activity-prediction-hack/
+
+# raw API dumps are cached locally; the *final* collected dataset (data/external/*.csv) IS tracked
+data/external/raw/
+
+# keep the final submission under version control, drop scratch ones
+submissions/*
+!submissions/submission.csv
+
+# local-only
+.pytest_cache/
+условия.txt

@@ -1,0 +1,6 @@
+extends: ext_ref.yaml
+tag: ext_ref_ovl
+
+# DIAGNOSTIC ONLY: same as ext_ref but the pool may contain measurements of the evaluated molecules themselves.
+external:
+  drop_overlap_with_eval: false

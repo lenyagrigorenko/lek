@@ -1,0 +1,43 @@
+{
+ "n_rows": 2452,
+ "doi_present": 1.0,
+ "doi_malformed": 0,
+ "ic50_missing_rows": 667,
+ "unique_molecules": 2010,
+ "unique_documents": 168,
+ "IC50_uM_quantiles(0,1,50,99,100%)": [
+  0.0007,
+  0.01,
+  80.0,
+  1200.0,
+  3699.7573
+ ],
+ "CC50_uM_quantiles(0,1,50,99,100%)": [
+  0.0,
+  0.902,
+  100.0,
+  1306.38,
+  3699.7573
+ ],
+ "SI_quantiles(0,1,50,99,100%)": [
+  0.0,
+  0.0875,
+  1.0,
+  2644.4324,
+  217567.57
+ ],
+ "si_gt_1e4": 8,
+ "implausible_ic50(<1e-6 or >1e6 uM)": 0,
+ "duplicated_keys": 32,
+ "molecules_also_in_train": 161,
+ "molecules_also_in_test": 324,
+ "frac_train_covered": 0.503,
+ "frac_test_covered": 0.543,
+ "train_overlap_si_agreement": {
+  "n_train_molecules_matched": 161,
+  "non_sentinel_within_2pct": 117,
+  "non_sentinel_within_x2": 125,
+  "sentinel_matched": 26,
+  "sentinel_with_missing_ic50_record": 13
+ }
+}

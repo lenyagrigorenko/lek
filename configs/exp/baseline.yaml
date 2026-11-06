@@ -1,0 +1,43 @@
+extends: ../base.yaml
+tag: baseline
+
+# Model zoo, task by task.
+#   clf: P(SI == 10000)        reg: log10(SI) of non-sentinel records (predicted for all rows)
+# `blocks` = feature blocks (features.blocks), `knn` = neighbour-label features, `kernel` = composite Tanimoto kernel.
+models:
+  clf:
+    # --- diagnostics: how much signal is in the source alone / in chemistry alone?
+    et_meta:   {type: extra_trees, blocks: ["@meta", "@style"], params: {n_estimators: 500, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    et_fp:     {type: extra_trees, blocks: [morgan2c], params: {n_estimators: 500, min_samples_leaf: 1, max_features: 0.05, n_jobs: 1}}
+    # --- full-feature models
+    et_all:    {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    rf_all:    {type: random_forest, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_knn:    {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    hgb_all:   {type: hgb, blocks: [desc, maccs, "@meta", "@style"], params: {max_depth: 4, learning_rate: 0.05, max_iter: 200, l2_regularization: 1.0}}
+    lr_all:    {type: logreg, blocks: [morgan2l, "@meta", "@style"], params: {C: 0.05, max_iter: 2000}}
+    cat_all:
+      type: catboost
+      blocks: [desc, maccs, meta_num, style_num]
+      cat_cols: ["@meta", "@style"]
+      params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}
+    # --- kernel methods
+    krr_m2:    {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.3}}
+    nw_m2:     {type: kernel_nw, kernel: {base: k_m2, gamma: 6.0, mult: {c_source_raw: 2.0}}, params: {prior_strength: 0.3}}
+    svm_m2:    {type: kernel_svm, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {C: 3.0}}
+
+  reg:
+    et_meta:   {type: extra_trees, blocks: ["@meta", "@style"], params: {n_estimators: 500, min_samples_leaf: 2, max_features: 0.3, n_jobs: 1}}
+    et_fp:     {type: extra_trees, blocks: [morgan2c], params: {n_estimators: 500, min_samples_leaf: 1, max_features: 0.05, n_jobs: 1}}
+    et_all:    {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    rf_all:    {type: random_forest, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_knn:    {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    hgb_all:   {type: hgb, blocks: [desc, maccs, "@meta", "@style"], params: {max_depth: 4, learning_rate: 0.05, max_iter: 200, l2_regularization: 1.0}}
+    ridge_all: {type: logreg, blocks: [morgan2l, "@meta", "@style"], params: {alpha: 30.0}}
+    cat_all:
+      type: catboost
+      blocks: [desc, maccs, meta_num, style_num]
+      cat_cols: ["@meta", "@style"]
+      params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}
+    krr_m2:    {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.3}}
+    nw_m2:     {type: kernel_nw, kernel: {base: k_m2, gamma: 6.0, mult: {c_source_raw: 2.0}}, params: {prior_strength: 0.3}}
+    svm_m2:    {type: kernel_svm, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {C: 3.0, epsilon: 0.2}}

@@ -1,0 +1,41 @@
+extends: baseline.yaml
+tag: main
+
+# Working configuration: everything from baseline.yaml plus new variants. Results are cached by model hash, so
+# adding a model here only computes that model.
+models:
+  clf:
+    # neighbour-label features from several similarity views (Morgan / atom-pair / RDKit paths)
+    et_knn3:   {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap, k_rdk], ks: [1, 3, 8]}, params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    et_knn3fp: {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap, k_rdk], ks: [1, 3, 8]}, params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_knn_mf5: {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, params: {n_estimators: 600, min_samples_leaf: 2, max_features: 0.5, n_jobs: 1}}
+    cat_knn:
+      type: catboost
+      blocks: [desc, meta_num, style_num]
+      cat_cols: ["@meta", "@style"]
+      knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}
+      params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}
+    hgb_knn:   {type: hgb, blocks: [desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {max_depth: 3, learning_rate: 0.05, max_iter: 150, l2_regularization: 2.0}}
+    # kernel ridge sweeps (different fingerprints / sharpness / regularisation / source weight)
+    krr_ap:    {type: kernel_ridge, kernel: {base: k_ap, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.3}}
+    krr_rdk:   {type: kernel_ridge, kernel: {base: k_rdk, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.3}}
+    krr_m3:    {type: kernel_ridge, kernel: {base: k_m3, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.3}}
+    krr_m2_g6: {type: kernel_ridge, kernel: {base: k_m2, gamma: 6.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.2}}
+    krr_m2_g1: {type: kernel_ridge, kernel: {base: k_m2, gamma: 1.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.2}}
+    krr_m2_s2: {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 3.0}, add: {c_source_raw: 1.0, c_culture_norm: 0.3}}, params: {alpha: 0.3}}
+    krr_m2_a1: {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 1.0}}
+    krr_m2_a01: {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.1}}
+
+  reg:
+    et_knn3:   {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernels: [k_m2, k_ap, k_rdk], ks: [1, 3, 8]}, params: {n_estimators: 600, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    cat_knn:
+      type: catboost
+      blocks: [desc, meta_num, style_num]
+      cat_cols: ["@meta", "@style"]
+      knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}
+      params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}
+    krr_ap:    {type: kernel_ridge, kernel: {base: k_ap, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.3}}
+    krr_rdk:   {type: kernel_ridge, kernel: {base: k_rdk, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.3}}
+    krr_m2_s2: {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 3.0}, add: {c_source_raw: 1.0, c_culture_norm: 0.3}}, params: {alpha: 0.3}}
+    krr_m2_a1: {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 1.0}}
+    krr_m2_a01: {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.1}}

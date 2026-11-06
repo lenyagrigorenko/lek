@@ -1,0 +1,8 @@
+extends: ext.yaml
+tag: ext_overlap
+
+# DIAGNOSTIC ONLY: external records of validation/test molecules stay in training (drop_overlap_with_eval=false).
+# The CV score then measures "how good is a lookup of public ChEMBL measurements", i.e. what a team that does
+# this would gain on the test set. Not used for the default submission (integrity policy, see README).
+external:
+  drop_overlap_with_eval: false

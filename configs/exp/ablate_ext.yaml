@@ -1,0 +1,11 @@
+extends: final.yaml
+tag: ablate_ext
+
+# ABLATION: do not use the external dataset at all (neither as training rows nor as a neighbour pool).
+external:
+  use: false
+models:
+  clf:
+    cat_all_ext: {enabled: false}
+  reg:
+    cat_all_ext: {enabled: false}

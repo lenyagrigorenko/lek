@@ -1,0 +1,10 @@
+extends: main.yaml
+tag: ext
+
+# Same model zoo, but the training folds additionally contain the ChEMBL records of data/external/vacv_external.csv.
+# Validation folds are never touched; external rows whose molecule is a validation/test molecule are dropped
+# (external.drop_overlap_with_eval) so no measured value of an evaluated molecule is ever used for training.
+external:
+  use: true
+  weight: 0.3
+  drop_overlap_with_eval: true

@@ -1,0 +1,17 @@
+catboost==1.2.10
+joblib==1.6.0
+lightgbm==4.7.0
+matplotlib==3.11.2
+mordredcommunity==2.0.7
+numpy==2.5.4
+optuna==5.0.0
+pandas==3.1.1
+pyarrow==26.0.1
+pytest==9.2.0
+PyYAML==6.0.3
+rdkit==2026.9.1
+requests==2.34.2
+scikit-learn==1.9.1
+scipy==1.18.1
+tqdm==4.70.1
+xgboost==3.4.1

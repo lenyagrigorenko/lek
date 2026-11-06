@@ -1,0 +1,78 @@
+# FINAL configuration: everything that produces submissions/submission.csv.
+#   python -m vacv_si run-all -c configs/exp/final.yaml
+# Self-contained zoo (it does not inherit the experimental zoos), curated from the CV leaderboards in reports/.
+extends: ../base.yaml
+tag: final
+
+cv:
+  n_splits: 5
+  n_repeats: 6              # 30 fold-models per model ...
+  full_fit_seeds: 6         # ... plus 6 refits on 100% of the training rows (their mean is used for the test)
+
+# External (ChEMBL) records, strict integrity policy: external records of validation/test molecules are never used.
+#   default mode `reference_only`: only a separate pool of neighbours for models with a `knn:` section;
+#   models can override it, e.g. `external: {mode: train_rows}` (rows added to the training set) or `external: false`.
+external:
+  use: true
+  mode: reference_only
+  weight: 0.3
+  drop_overlap_with_eval: true
+
+ensemble:
+  loss: brier
+  l2_grid: [0.0, 0.01, 0.1, 1.0]
+  retransform: auto
+  test_source: mix           # mean of the fold-models and of the full-data refits
+
+# YAML anchors keep the zoo compact
+_anchors:
+  et_params: &et {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}
+  et_params_f3: &et_f3 {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}
+  cat_cols: &cat_cols ["@meta", "@style"]
+  cat_params: &cat {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}
+  gbm_params: &gbm {n_estimators: 300, learning_rate: 0.03, num_leaves: 8, min_child_samples: 5, subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.3, reg_lambda: 5.0}
+  xgb_params: &xgb {n_estimators: 300, max_depth: 4, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 1, reg_lambda: 5.0}
+  knn3: &knn3 {kernels: [k_m2, k_ap, k_rdk], ks: [1, 3, 8]}
+  knn2: &knn2 {kernels: [k_m2, k_ap], ks: [1, 3, 8]}
+
+models:
+  clf:
+    # ---- ExtraTrees on different molecular views + provenance/meta features (the strongest family) ----
+    et_all:      {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: *et}
+    et_all_mf1:  {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.1, n_jobs: 1}}
+    et_all_ent:  {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, criterion: entropy, n_jobs: 1}}
+    et_fpmeta:   {type: extra_trees, blocks: [morgan2c, "@meta", "@style"], params: *et}
+    et_ap:       {type: extra_trees, blocks: [apc, desc, "@meta", "@style"], params: *et}
+    et_maccs:    {type: extra_trees, blocks: [maccs, erg, mqn, desc, "@meta", "@style"], params: *et_f3}
+    et_nofp:     {type: extra_trees, blocks: [desc, "@meta", "@style"], params: *et_f3}
+    et_meta:     {type: extra_trees, blocks: ["@meta", "@style"], params: {n_estimators: 500, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    # ---- + neighbour-label features (own competition rows; external pool when available) ----
+    et_knn:      {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, params: *et_f3}
+    et_knn3:     {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: *knn3, params: *et_f3}
+    et_knn_ap:   {type: extra_trees, blocks: [apc, desc, "@meta", "@style"], knn: *knn2, params: *et}
+    # ---- CatBoost with native categorical source columns ----
+    cat_all:     {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: *cat_cols, params: *cat}
+    cat_all_ext: {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: *cat_cols, params: *cat, external: {mode: train_rows, weight: 0.3}}
+    cat_knn:     {type: catboost, blocks: [desc, meta_num, style_num], cat_cols: *cat_cols, knn: *knn2, params: *cat}
+    # ---- other boosters (diversity) ----
+    hgb_all:     {type: hgb, blocks: [desc, maccs, "@meta", "@style"], params: {max_depth: 4, learning_rate: 0.05, max_iter: 200, l2_regularization: 1.0}}
+    lgbm_all:    {type: lightgbm, blocks: [desc, maccs, "@meta", "@style"], params: *gbm}
+    xgb_all:     {type: xgboost, blocks: [desc, maccs, "@meta", "@style"], params: *xgb}
+    # ---- kernel methods (chemistry only, weaker, kept as diverse members) ----
+    krr_m2_g1:   {type: kernel_ridge, kernel: {base: k_m2, gamma: 1.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.2}}
+
+  reg:
+    cat_all:     {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: *cat_cols, params: *cat}
+    cat_all_ext: {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: *cat_cols, params: *cat, external: {mode: train_rows, weight: 0.3}}
+    cat_deep:    {type: catboost, blocks: [desc, maccs, meta_num, style_num], cat_cols: *cat_cols, params: {iterations: 800, depth: 6, learning_rate: 0.04, l2_leaf_reg: 8}}
+    cat_knn:     {type: catboost, blocks: [desc, meta_num, style_num], cat_cols: *cat_cols, knn: *knn2, params: *cat}
+    et_meta:     {type: extra_trees, blocks: ["@meta", "@style"], params: {n_estimators: 500, min_samples_leaf: 2, max_features: 0.3, n_jobs: 1}}
+    et_all_msl2: {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 2, max_features: 0.2, n_jobs: 1}}
+    et_knn:      {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: {kernel: k_m2, ks: [1, 3, 8]}, params: *et_f3}
+    et_knn3:     {type: extra_trees, blocks: [desc, "@meta", "@style"], knn: *knn3, params: *et_f3}
+    hgb_all:     {type: hgb, blocks: [desc, maccs, "@meta", "@style"], params: {max_depth: 4, learning_rate: 0.05, max_iter: 200, l2_regularization: 1.0}}
+    lgbm_knn:    {type: lightgbm, blocks: [desc, "@meta", "@style"], knn: *knn2, params: *gbm}
+    xgb_knn:     {type: xgboost, blocks: [desc, "@meta", "@style"], knn: *knn2, params: *xgb}
+    krr_m2_a01:  {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {alpha: 0.1}}
+    krr_m2_s2:   {type: kernel_ridge, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 3.0}, add: {c_source_raw: 1.0, c_culture_norm: 0.3}}, params: {alpha: 0.3}}
+    svm_m2:      {type: kernel_svm, kernel: {base: k_m2, gamma: 3.0, mult: {c_source_raw: 1.0}, add: {c_source_raw: 0.5}}, params: {C: 3.0, epsilon: 0.2}}

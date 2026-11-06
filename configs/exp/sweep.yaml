@@ -1,0 +1,26 @@
+extends: gbm.yaml
+tag: main
+
+# Small hyper-parameter sweep around the strongest family (ExtraTrees) for the sentinel classifier.
+models:
+  clf:
+    et_all_mf1:   {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.1, n_jobs: 1}}
+    et_all_mf3:   {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    et_all_mf5:   {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.5, n_jobs: 1}}
+    et_all_msl2:  {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 2, max_features: 0.2, n_jobs: 1}}
+    et_all_ent:   {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, criterion: entropy, n_jobs: 1}}
+    et_nofp:      {type: extra_trees, blocks: [desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    et_fpmeta:    {type: extra_trees, blocks: [morgan2c, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_ap:        {type: extra_trees, blocks: [apc, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_m3:        {type: extra_trees, blocks: [morgan3c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.2, n_jobs: 1}}
+    et_maccs:     {type: extra_trees, blocks: [maccs, erg, mqn, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    rf_all_mf3:   {type: random_forest, blocks: [desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+  reg:
+    et_nofp:      {type: extra_trees, blocks: [desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    et_maccs:     {type: extra_trees, blocks: [maccs, erg, mqn, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 1, max_features: 0.3, n_jobs: 1}}
+    et_all_msl2:  {type: extra_trees, blocks: [morgan2c, desc, "@meta", "@style"], params: {n_estimators: 800, min_samples_leaf: 2, max_features: 0.2, n_jobs: 1}}
+    cat_deep:
+      type: catboost
+      blocks: [desc, maccs, meta_num, style_num]
+      cat_cols: ["@meta", "@style"]
+      params: {iterations: 800, depth: 6, learning_rate: 0.04, l2_leaf_reg: 8}

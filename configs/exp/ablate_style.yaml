@@ -1,0 +1,20 @@
+extends: final.yaml
+tag: ablate_style
+
+# ABLATION: remove the SMILES-writing-style / provenance features (group `style` and the style columns of CatBoost)
+# from every model. Used for the README table "what do the provenance features give?".
+features:
+  groups:
+    style: []
+  cat_groups:
+    style: []
+models:
+  clf:
+    cat_all:     {blocks: [desc, maccs, meta_num]}
+    cat_all_ext: {blocks: [desc, maccs, meta_num]}
+    cat_knn:     {blocks: [desc, meta_num]}
+  reg:
+    cat_all:     {blocks: [desc, maccs, meta_num]}
+    cat_all_ext: {blocks: [desc, maccs, meta_num]}
+    cat_deep:    {blocks: [desc, maccs, meta_num]}
+    cat_knn:     {blocks: [desc, meta_num]}

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vacv-si"
+version = "0.1.0"
+description = "Predicting the selectivity index (SI) of small molecules against vaccinia virus (VACV)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy",
+  "scikit-learn",
+  "rdkit",
+  "pyyaml",
+  "joblib",
+  "tqdm",
+  "requests",
+  "catboost",
+  "matplotlib",
+]
+
+[project.optional-dependencies]
+# LightGBM / XGBoost need the OpenMP runtime on macOS:  brew install libomp
+gbm = ["lightgbm", "xgboost"]
+chem = ["mordredcommunity"]
+external = ["chembl_webresource_client", "pubchempy"]
+dev = ["pytest", "pyarrow"]
+
+[project.scripts]
+vacv-si = "vacv_si.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
