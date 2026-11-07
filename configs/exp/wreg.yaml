@@ -1,0 +1,16 @@
+# Log10-SI regressors trained with weights SI ** power: the raw MSE is dominated by the large-SI rows, a log-scale fit treats them like all others.
+#   python -m vacv_si cv -c configs/exp/wreg.yaml --tasks reg
+#   python -m vacv_si ensemble -c configs/exp/wreg.yaml --no-submit -o ensemble.reg_models='[cat_all_w05, ...]'
+extends: final.yaml
+tag: wreg
+ensemble:
+  include_tags: [final]
+models:
+  reg:
+    cat_all_w05:     {type: catboost, blocks: [desc, maccs, "@meta_n", "@style_n"], cat_cols: ["@meta", "@style"], sw_power: 0.5, params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}}
+    cat_deep_w05:    {type: catboost, blocks: [desc, maccs, "@meta_n", "@style_n"], cat_cols: ["@meta", "@style"], sw_power: 0.5, params: {iterations: 800, depth: 6, learning_rate: 0.04, l2_leaf_reg: 8}}
+    cat_knn_w05:     {type: catboost, blocks: [desc, "@meta_n", "@style_n"], cat_cols: ["@meta", "@style"], sw_power: 0.5, knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}}
+    cat_all_ext_w05: {type: catboost, blocks: [desc, maccs, "@meta_n", "@style_n"], cat_cols: ["@meta", "@style"], sw_power: 0.5, external: {mode: train_rows, weight: 0.3}, params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}}
+    cat_all_w10:     {type: catboost, blocks: [desc, maccs, "@meta_n", "@style_n"], cat_cols: ["@meta", "@style"], sw_power: 1.0, params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}}
+    cat_knn_w10:     {type: catboost, blocks: [desc, "@meta_n", "@style_n"], cat_cols: ["@meta", "@style"], sw_power: 1.0, knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {iterations: 500, depth: 5, learning_rate: 0.05, l2_leaf_reg: 5}}
+    xgb_knn_w05:     {type: xgboost, blocks: [desc, "@meta", "@style"], sw_power: 0.5, knn: {kernels: [k_m2, k_ap], ks: [1, 3, 8]}, params: {n_estimators: 300, max_depth: 4, learning_rate: 0.03, subsample: 0.8, colsample_bytree: 0.3, min_child_weight: 1, reg_lambda: 5.0}}

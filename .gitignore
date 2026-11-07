@@ -33,3 +33,6 @@ submissions/*
 # local-only
 .pytest_cache/
 условия.txt
+
+# competition archives are not redistributed
+*.zip

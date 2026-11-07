@@ -27,7 +27,7 @@ def _make(n: int, split: str, seed: int) -> pd.DataFrame:
     for i in range(n):
         strain, culture, p = _SOURCES[i % len(_SOURCES)]
         sent = bool(rng.random() < p)
-        si = 10000.0 if sent else float(np.round(10 ** rng.normal(1.0, 0.8), 3))
+        si = 0.0 if sent else float(np.round(10 ** rng.normal(1.0, 0.8), 3))      # release 2: inactive compounds have SI == 0
         cc50 = float(np.round(rng.uniform(10, 500), 2))
         rows.append({
             "Title": f"sid{103000000 + i}" if i % 2 == 0 else str(i),
@@ -44,9 +44,9 @@ def _make(n: int, split: str, seed: int) -> pd.DataFrame:
 
 @pytest.fixture(scope="session")
 def mini_raw(tmp_path_factory):
-    """Directory with train.csv / test.csv / sample_submit.csv in the real competition format (synthetic content)."""
+    """Directory with train_v2.csv / test.csv / sample_submit.csv in the real competition format (synthetic content)."""
     d = tmp_path_factory.mktemp("raw")
-    _make(120, "train", 0).to_csv(d / "train.csv", index=False)
+    _make(120, "train", 0).to_csv(d / "train_v2.csv", index=False)
     _make(40, "test", 1).to_csv(d / "test.csv", index=False)
     pd.DataFrame({"index": np.arange(40), "SI VACV": 1.0}).to_csv(d / "sample_submit.csv", index=False)
     return d

@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 TARGET = "SI VACV"
-SENTINEL_VALUE = 10000.0      # SI is set to exactly this when IC50 is missing (see README, "Target anatomy")
-SI_FLOOR = 1e-2               # SI is clipped to this before taking log10 (two rows have SI == 0)
+# Data release 2 (train_v2.csv, 7 Nov 2026): SI is exactly 0 for compounds without an antiviral IC50 (inactive against VACV)
+# and for the two records without a CC50. The first release used 10000 for the inactive ones (an organisers' mistake: the
+# value should have been in IC50, not in SI); `load_kaggle` refuses a file in that convention.
+SENTINEL_VALUE = 0.0
+OLD_SENTINEL_VALUE = 10000.0
+SI_FLOOR = 1e-2               # SI is clipped to this before taking log10 (only non-zero SI is ever log-transformed)
 
 # The organisers forbid using these columns to build models / predict the target
 # ("the target is a function of these two columns"). They are dropped at load time and

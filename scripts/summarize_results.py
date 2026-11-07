@@ -28,7 +28,7 @@ def main() -> None:
     for label, m, mw, b, rm, tag in rows:
         sub = "submissions/submission.csv" if tag == "final" else f"submissions/submission_{tag}.csv"
         print(f"| {label} | {m / 1e6:.2f} M | {mw / 1e6:.2f} M | {b:.4f} | {rm:.3f} | `{sub}` |")
-    print(f"| константа (среднее train) | 22.08 M | {const_wo / 1e6:.2f} M | 0.1890 | 1.049 | — |" if rows else "")
+    print(f"| константа (среднее train) | 4.26 M | {const_wo / 1e6:.2f} M | 0.1921 | 1.016 | — |" if rows else "")   # release 2 of the data
 
 
 if __name__ == "__main__":

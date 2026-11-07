@@ -1,5 +1,5 @@
-"""Metrics. The competition metric is MSE on the raw SI, which decomposes (see README) into
-   (a) a sentinel part ~ 1e8 * Brier(p_sentinel)  and  (b) a smaller continuous part.
+"""Metrics. The competition metric is MSE on the raw SI. SI is 0 for inactive compounds ("sentinel") and a heavy-tailed positive
+number otherwise, so the MSE-optimal prediction is E[SI | x] = (1 - p_sentinel(x)) * E[SI | x, active] (see `combine`).
 """
 from __future__ import annotations
 
@@ -39,11 +39,11 @@ def reg_metrics(y: np.ndarray, p: np.ndarray) -> dict:
 
 
 def proxy_raw_mse(si_true: np.ndarray, p_sentinel: np.ndarray, nonsent_mean: float) -> float:
-    """Raw-scale MSE of  p*10000 + (1-p)*c  (c = mean SI of non-sentinel rows): a fast ranking proxy for clf models."""
+    """Raw-scale MSE of  p*0 + (1-p)*c  (c = mean SI of non-sentinel rows): a fast ranking proxy for clf models."""
     pred = p_sentinel * SENTINEL_VALUE + (1.0 - p_sentinel) * nonsent_mean
     return mse(si_true, pred)
 
 
 def combine(p_sentinel: np.ndarray, m_nonsent: np.ndarray) -> np.ndarray:
-    """E[SI | x] = p * 10000 + (1 - p) * E[SI | x, non-sentinel]."""
+    """E[SI | x] = p * SENTINEL_VALUE (= 0) + (1 - p) * E[SI | x, non-sentinel]."""
     return p_sentinel * SENTINEL_VALUE + (1.0 - p_sentinel) * m_nonsent

@@ -27,6 +27,23 @@ def test_forbidden_columns_never_enter_the_table(mini_cfg):
     assert sorted(df.loc[df.split == "test", "test_index"].astype(int)) == list(range(40))
 
 
+def test_first_release_train_file_is_rejected(tmp_path):
+    """The organisers' first train.csv marked inactive compounds with SI == 10000 (a mistake); only release 2 (SI == 0) is accepted."""
+    import pandas as pd
+
+    from vacv_si.data.prepare import load_kaggle
+
+    row = {"Title": "a", "CC50_uM": 1.0, "IC50_uM_VACV": np.nan, "SMILES": "CCO", "strain": "x", "Culture": "y"}
+    pd.DataFrame([{**row, "SI VACV": 10000.0}]).to_csv(tmp_path / "train.csv", index=False)
+    pd.DataFrame([{**row, "SI VACV": 0.0}]).to_csv(tmp_path / "train_v2.csv", index=False)
+    pd.DataFrame([{"index": 0, **row}]).to_csv(tmp_path / "test.csv", index=False)
+    with pytest.raises(ValueError, match="first release"):
+        load_kaggle(tmp_path, "train.csv")
+    tr, te = load_kaggle(tmp_path)                                   # default file name: train_v2.csv
+    assert float(tr["SI VACV"].iloc[0]) == 0.0
+    assert not ({"CC50_uM", "IC50_uM_VACV"} & (set(tr.columns) | set(te.columns)))           # forbidden columns are dropped on load
+
+
 def test_feature_blocks_kernel_and_groups(mini_cfg, tmp_path):
     df, store = _store(mini_cfg, tmp_path)
     for b in ["morgan2c", "desc", "meta_num", "meta_oh", "style_num"]:

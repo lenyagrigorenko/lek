@@ -6,7 +6,8 @@ Conventions mirror the competition data (checked on molecules present in both, s
   * SI = CC50 / IC50 computed from the numbers as reported (the sign of '>' / '<' relations is ignored),
   * IC50 / CC50 are in micromolar (ug/mL values are converted with the molecular weight),
   * a record whose antiviral activity is reported without a number ("inactive") but has a CC50 gets IC50 = NaN
-    (`ic50_missing = True`) - in the competition table this is exactly the "SI = 10000" sentinel.
+    (`ic50_missing = True`) - in the competition table this is exactly the inactive label SI = 0 (data release 2;
+    release 1 used 10000 there). The `SI` column of those rows stays empty here; `data/prepare.py` fills in the label.
 """
 from __future__ import annotations
 
@@ -112,7 +113,7 @@ def assemble_chembl(raw: dict, n_jobs: int = 8) -> pd.DataFrame:
     pot["is_cyto_assay"] = pot["assay_desc"].fillna("").map(lambda d: bool(CYTO_RE.search(d)) and not re.search(r"vaccinia|vacv", d, re.I))
     pot = pot[~pot["is_cyto_assay"]]                       # drop cytotoxicity assays that merely mention the virus
     # A vaccinia record WITHOUT any number ("Activity", "Not Determined", "Not Active", ...) is what the competition
-    # encodes as IC50 = NaN -> SI = 10000. Records whose number is in unusable units (e.g. % inhibition) are dropped.
+    # encodes as IC50 = NaN -> SI = 0 (inactive). Records whose number is in unusable units (e.g. % inhibition) are dropped.
     pot["has_value"] = pot["standard_value"].notna()
     pot["numeric"] = pot["val_uM"].notna()
     pot = pot[pot["numeric"] | ~pot["has_value"]]

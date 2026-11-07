@@ -14,7 +14,7 @@ import pandas as pd
 
 from ..chem.standardize import StdOptions, standardize_series
 from ..paths import PROCESSED, ensure_dirs, resolve
-from .schema import FORBIDDEN_COLUMNS, SENTINEL_VALUE, SI_FLOOR, TARGET
+from .schema import FORBIDDEN_COLUMNS, OLD_SENTINEL_VALUE, SENTINEL_VALUE, SI_FLOOR, TARGET
 
 log = logging.getLogger(__name__)
 
@@ -29,10 +29,13 @@ def log_si_from_si(si: pd.Series | np.ndarray) -> np.ndarray:
     return np.log10(np.clip(np.asarray(si, dtype=float), SI_FLOOR, None))
 
 
-def load_kaggle(raw_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_kaggle(raw_dir: Path, train_file: str = "train_v2.csv") -> tuple[pd.DataFrame, pd.DataFrame]:
     """Read the competition files and drop the forbidden columns immediately."""
-    train = pd.read_csv(raw_dir / "train.csv")
+    train = pd.read_csv(raw_dir / train_file)
     test = pd.read_csv(raw_dir / "test.csv")
+    if TARGET in train.columns and (train[TARGET] == OLD_SENTINEL_VALUE).any():
+        raise ValueError(f"{train_file} uses the first release's convention (SI == 10000 for inactive compounds); "
+                         "the organisers' corrected file is train_v2.csv (inactive -> SI == 0)")
     train = train.drop(columns=[c for c in FORBIDDEN_COLUMNS if c in train.columns])
     test = test.drop(columns=[c for c in FORBIDDEN_COLUMNS if c in test.columns])
     return train, test
@@ -75,7 +78,7 @@ def _external_frame(path: Path) -> pd.DataFrame:
             "doi": ext.get("doi", pd.Series("", index=ext.index)).fillna("").astype(str).values,
         }
     )
-    # a record with a CC50 but no antiviral IC50 is the analogue of the competition sentinel (SI := 10000)
+    # a record with a CC50 but no antiviral IC50 is the analogue of the competition's inactive compounds (SI := 0)
     out["_ic50_missing"] = ext["ic50_missing"].fillna(False).astype(bool).values if "ic50_missing" in ext.columns else False
     # CC50 taken from another cell line of the same paper (see data/external/README.md); True when unknown
     out["_cc50_same_cell"] = ext["cc50_same_cell"].fillna(True).astype(bool).values if "cc50_same_cell" in ext.columns else True
@@ -86,7 +89,7 @@ def build_all_table(cfg: dict, use_external: Optional[bool] = None) -> pd.DataFr
     ensure_dirs()
     raw_dir = resolve(cfg.get("paths", {}).get("raw_dir", "data/raw"))
     n_jobs = int(cfg.get("n_jobs", 8))
-    tr, te = load_kaggle(raw_dir)
+    tr, te = load_kaggle(raw_dir, cfg.get("paths", {}).get("train_file", "train_v2.csv"))
     parts = [_kaggle_frame(tr, "train"), _kaggle_frame(te, "test")]
 
     use_external = cfg.get("external", {}).get("use", False) if use_external is None else use_external
@@ -139,7 +142,10 @@ def load_all_table(cfg: dict, rebuild: bool = False) -> pd.DataFrame:
         tag = "all_ext" + ("" if ecfg.get("sentinel_from_missing_ic50", True) else "_nomiss") + ("_samecell" if ecfg.get("require_same_cell") else "")
     path = processed_path(tag)
     ext_path = resolve(cfg.get("paths", {}).get("external_csv", "data/external/vacv_external.csv"))
-    stale = path.exists() and use_ext and ext_path.exists() and ext_path.stat().st_mtime > path.stat().st_mtime
+    raw_dir = resolve(cfg.get("paths", {}).get("raw_dir", "data/raw"))
+    inputs = [raw_dir / cfg.get("paths", {}).get("train_file", "train_v2.csv"), raw_dir / "test.csv"] + ([ext_path] if use_ext else [])
+    # a cache older than any of its input files is rebuilt (e.g. after the organisers replaced train.csv by train_v2.csv)
+    stale = path.exists() and any(p.exists() and p.stat().st_mtime > path.stat().st_mtime for p in inputs)
     if path.exists() and not rebuild and not stale:
         return pd.read_pickle(path)
     df = build_all_table(cfg, use_external=use_ext)

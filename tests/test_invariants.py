@@ -13,7 +13,7 @@ from vacv_si.data.schema import FORBIDDEN_COLUMNS, SENTINEL_VALUE, assert_no_for
 from vacv_si.models.base import neighbor_features
 from vacv_si.paths import RAW
 
-needs_data = pytest.mark.skipif(not (RAW / "train.csv").exists(), reason="competition files not in data/raw")
+needs_data = pytest.mark.skipif(not (RAW / "train_v2.csv").exists(), reason="competition files not in data/raw")
 
 
 def test_forbidden_guard_raises():
@@ -34,9 +34,10 @@ def test_processed_table_has_no_forbidden_columns():
         assert c not in df.columns
     assert set(df["split"]) == {"train", "test"}
     assert df.loc[df.split == "test", "si"].isna().all()
-    # sentinel is exactly the value 10000
+    # release 2: inactive compounds are exactly SI == 0 (and nothing is left at the first release's 10000)
     tr = df[df.split == "train"]
     assert ((tr["si"] == SENTINEL_VALUE) == (tr["is_sentinel"] == 1.0)).all()
+    assert SENTINEL_VALUE == 0.0 and not (tr["si"] == 10000.0).any()
 
 
 @needs_data
@@ -103,8 +104,8 @@ def test_standardization_strips_salts_and_keeps_stereo():
 
 def test_combine_is_the_conditional_mean():
     assert combine(np.array([0.0]), np.array([123.0]))[0] == 123.0
-    assert combine(np.array([1.0]), np.array([123.0]))[0] == SENTINEL_VALUE
-    assert combine(np.array([0.25]), np.array([100.0]))[0] == pytest.approx(0.25 * 10000 + 0.75 * 100)
+    assert combine(np.array([1.0]), np.array([123.0]))[0] == SENTINEL_VALUE == 0.0
+    assert combine(np.array([0.25]), np.array([100.0]))[0] == pytest.approx(0.75 * 100)
 
 
 def test_neighbor_features_are_leave_one_out():

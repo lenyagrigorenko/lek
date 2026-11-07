@@ -4,6 +4,7 @@ n_jobs: 8
 
 paths:
   raw_dir: data/raw
+  train_file: train_v2.csv        # release 2 of the organisers' training data (inactive compounds: SI = 0)
   external_csv: data/external/vacv_external.csv
 
 data:

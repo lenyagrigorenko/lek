@@ -6,7 +6,7 @@ For every model of every task it stores, under  artifacts/oof/<tag>/<task>/<name
 so that the ensembling stage never has to re-train anything.
 
 Tasks
-    clf : P(SI == 10000)                           trained on all labelled rows
+    clf : P(SI == 0), i.e. the compound is inactive  trained on all labelled rows
     reg : log10(SI) of non-sentinel records        trained on non-sentinel rows, predicted for every row
 """
 from __future__ import annotations
@@ -120,7 +120,7 @@ TASKS = ("clf", "reg", "rawns", "raw")
 def _label(df: pd.DataFrame, task: str) -> np.ndarray:
     """Training label of a task (NaN = row is not used for that task).
 
-    clf    P(SI == 10000)                           all labelled rows
+    clf    P(SI == 0), the compound is inactive     all labelled rows
     reg    log10(SI) of non-sentinel records        (E[SI | x, non-sentinel] after retransformation)
     rawns  raw SI of non-sentinel records           (E[SI | x, non-sentinel] directly, heavy tailed)
     raw    raw SI / 1e4 of every record             (the competition target itself)
@@ -138,7 +138,7 @@ def _label(df: pd.DataFrame, task: str) -> np.ndarray:
 
 
 def _fit_rows(store: FeatureStore, task: str, fold: Fold, ext_rows: np.ndarray, test_rows: np.ndarray, cfg: dict,
-              y_cap=None):
+              y_cap=None, sw_power=None):
     """Rows to train on (+ optional reference-only rows) for one fold.
 
     external.mode = train_rows      external records are ordinary (down-weighted) training rows
@@ -170,6 +170,9 @@ def _fit_rows(store: FeatureStore, task: str, fold: Fold, ext_rows: np.ndarray, 
     w = df["weight"].values[rows].copy()
     if "weight" in ext_cfg:                                   # model-level override of the external sample weight
         w[df["split"].values[rows] == "ext"] = float(ext_cfg["weight"])
+    if sw_power and task == "reg":            # spec `sw_power`: weight = SI ** power, so the large-SI rows that dominate the raw MSE count more
+        w = w * np.power(10.0, float(sw_power) * np.where(np.isfinite(y), y, 0.0))
+        w = w / np.mean(w[ok])
     return rows[ok], y[ok], w[ok], ref
 
 
@@ -224,7 +227,7 @@ def run_cv_one(task: str, name: str, spec: dict, store: FeatureStore, plan: list
     spec_run = _prepare_spec(spec, cfg)
 
     def job(j: int, fold: Fold):
-        rows, y, w, ref = _fit_rows(store, task, fold, ext_rows, test_rows, cfg, y_cap=spec.get("y_cap"))
+        rows, y, w, ref = _fit_rows(store, task, fold, ext_rows, test_rows, cfg, y_cap=spec.get("y_cap"), sw_power=spec.get("sw_power"))
         model = build_model(store, task, spec_run, seed=seed0 + 1000 * fold.repeat + fold.fold)
         model.fit(rows, y, w, ref=ref)
         return j, model.predict(fold.val), model.predict(test_rows)
@@ -248,7 +251,7 @@ def run_cv_one(task: str, name: str, spec: dict, store: FeatureStore, plan: list
         full_fold = Fold(repeat=0, fold=-1, train=train_rows, val=np.zeros(0, dtype=np.int64))
 
         def job_full(s_i: int):
-            rows, y, w, ref = _fit_rows(store, task, full_fold, ext_rows, test_rows, cfg, y_cap=spec.get("y_cap"))
+            rows, y, w, ref = _fit_rows(store, task, full_fold, ext_rows, test_rows, cfg, y_cap=spec.get("y_cap"), sw_power=spec.get("sw_power"))
             model = build_model(store, task, spec_run, seed=seed0 + 777 + 31 * s_i)
             model.fit(rows, y, w, ref=ref)
             return model.predict(test_rows)

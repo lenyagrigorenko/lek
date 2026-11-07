@@ -1,9 +1,9 @@
 """Stage 2: blend stored OOF predictions, evaluate the full pipeline on the competition metric and write the submission.
 
-    p_hat(x)  = calibrated blend of the clf models              (P[SI == 10000])
+    p_hat(x)  = calibrated blend of the clf models              (P[SI == 0], i.e. the compound is inactive)
     mu_hat(x) = blend of the reg models                         (log10 SI if the record is NOT a sentinel)
     M(x)      = retransform(mu_hat)                             (E[SI | x, non-sentinel])
-    SI_hat(x) = p_hat * 10000 + (1 - p_hat) * M(x)              (the MSE-optimal point prediction)
+    SI_hat(x) = p_hat * 0 + (1 - p_hat) * M(x)                  (the MSE-optimal point prediction)
 """
 from __future__ import annotations
 
@@ -21,6 +21,9 @@ from ..data.schema import SENTINEL_VALUE
 from ..features.meta import build_meta
 from ..paths import OOF_DIR, REPORTS, SUBMISSIONS, ensure_dirs, resolve
 from .blend import (RETRANSFORMS, TopKIsoBlend, TopKMeanBlend, TopKRegMean, fit_clf_stack, fit_reg_stack, nested_scores_clf)
+from .twins import DEFAULTS as TWIN_DEFAULTS
+from .twins import adjust as twin_adjust
+from .twins import twin_lookup
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +110,7 @@ def run_ensemble(cfg: dict, write_submission: bool = True) -> dict:
 
     # ---------------------------------------------------------------- classification blend
     singles = _score_single("clf", clf, y, ns, ly)
-    print("\n== sentinel classifier: single models (Brier, 1e8*Brier ~ MSE share) ==")
+    print("\n== sentinel (inactive) classifier: single models (Brier) ==")
     for n, s in singles:
         print(f"  {n:20s} brier={s:.4f}")
     ranked = [n for n, _ in singles]
@@ -133,7 +136,7 @@ def run_ensemble(cfg: dict, write_submission: bool = True) -> dict:
     p_oof = clf_blender.predict(P)
     p_test = clf_blender.predict(Pt)
     # cross-fitted probabilities (the blender is refitted inside every fold): honest scores + choice of the clipping level.
-    # The costly mistakes are confident ones (p ~ 0.95 on a non-sentinel row costs ~1e8 * 0.9), so p is clipped to [eps, 1-eps].
+    # Confident mistakes are the costly ones (p ~ 0.95 on an active row with a large SI), so p may be clipped to [eps, 1-eps].
     PP = []
     for r in range(8):
         pp = np.zeros(len(y))
@@ -187,20 +190,37 @@ def run_ensemble(cfg: dict, write_submission: bool = True) -> dict:
     print(f"  -> chosen: {best_reg}")
     report["reg"] = {"chosen": best_reg, "nested_rmse": rres, "singles": dict(singles_r)}
 
+    # ---------------------------------------------------------------- twin correction (same molecule / stereoisomer in the training pool)
+    twin_cfg = {**TWIN_DEFAULTS, **(ecfg.get("twins") or {})}
+    if twin_cfg["use"]:
+        key_tr, key_te = tr["ik14"].tolist(), te["ik14"].tolist()
+        tw_tr, tw_te = twin_lookup(key_tr, key_tr, exclude_self=True), twin_lookup(key_te, key_tr, exclude_self=False)
+        pool_log, pool_zero = tr["log_si"].values.astype(float), y == 1.0
+        mu_raw = mu_oof
+        mu_oof, p_oof, n_tr = twin_adjust(mu_oof, p_oof, tw_tr, pool_log, pool_zero, twin_cfg)
+        mu_test, p_test, n_te = twin_adjust(mu_test, p_test, tw_te, pool_log, pool_zero, twin_cfg)
+        PP = [twin_adjust(mu_raw, pp, tw_tr, pool_log, pool_zero, twin_cfg)[1] for pp in PP]
+        print(f"\n== twin correction (w={twin_cfg['w']}): {n_tr} train rows and {n_te} test rows have a twin in the training pool ==")
+        report["twins"] = {**twin_cfg, "train_rows": n_tr, "test_rows": n_te}
+
     # ---------------------------------------------------------------- retransformation + full pipeline metric
     print("\n== full pipeline: raw MSE on training rows (nested over the retransform calibration) ==")
-    rt_results = {}
+    rt_results, rt_bulk = {}, {}
+    keep_rows = np.arange(len(si)) != int(np.argmax(si))        # the single largest SI is an unpredictable outlier: also shown without it
     for name, make in RETRANSFORMS.items():
-        mses = []
+        mses, bulks = [], []
         for r in range(8):
             Moof = np.zeros(len(si))
             for a, b in KFold(5, shuffle=True, random_state=seed + 100 + r).split(si):
                 a_ns = a[ns[a]]
                 f = make().fit(mu_oof[a_ns], si[a_ns], grp_tr[a_ns])
                 Moof[b] = f(mu_oof[b], grp_tr[b])
-            mses.append(mse(si, p_oof * SENTINEL_VALUE + (1 - p_oof) * Moof))
+            pred_r = p_oof * SENTINEL_VALUE + (1 - p_oof) * Moof
+            mses.append(mse(si, pred_r))
+            bulks.append(mse(si[keep_rows], pred_r[keep_rows]))
         rt_results[name] = (float(np.mean(mses)), float(np.std(mses)))
-        print(f"  {name:10s} MSE={np.mean(mses):>12,.0f} ± {np.std(mses):>9,.0f}   RMSE={np.sqrt(np.mean(mses)):8.1f}")
+        rt_bulk[name] = float(np.mean(bulks))
+        print(f"  {name:10s} MSE={np.mean(mses):>12,.0f} ± {np.std(mses):>9,.0f}   RMSE={np.sqrt(np.mean(mses)):8.1f}   without the largest row: {rt_bulk[name]:>9,.0f}")
     forced = ecfg.get("retransform", "auto")
     best_rt = min(rt_results, key=lambda k: rt_results[k][0]) if forced == "auto" else forced
     retrans = RETRANSFORMS[best_rt]().fit(mu_oof[ns], si[ns], grp_tr[ns])
@@ -212,7 +232,7 @@ def run_ensemble(cfg: dict, write_submission: bool = True) -> dict:
           f" perfect-classifier floor with this M: {mse(si, ideal):,.0f})")
     print(f"  split of the error: sentinel rows {np.sum((si - final_oof)[~ns] ** 2) / len(si):,.0f} + non-sentinel rows "
           f"{np.sum((si - final_oof)[ns] ** 2) / len(si):,.0f}")
-    report["pipeline"] = {"retransform": best_rt, "retransform_cv": rt_results, "oof_mse": mse(si, final_oof)}
+    report["pipeline"] = {"retransform": best_rt, "retransform_cv": rt_results, "retransform_cv_without_largest_row": rt_bulk, "oof_mse": mse(si, final_oof)}
 
     # ---- HONEST end-to-end estimate: the sentinel blender and the retransformation are re-fitted inside every CV fold
     cf = []
@@ -272,6 +292,14 @@ def run_ensemble(cfg: dict, write_submission: bool = True) -> dict:
                 report["pipeline"]["oof_mse"] = mse(si, final_oof)
                 print(f"  OOF raw MSE after mixing = {mse(si, final_oof):,.0f}")
 
+    # ---------------------------------------------------------------- safety cap: an expectation above ~half of the largest SI ever seen is not supported by the data
+    cap = ecfg.get("max_pred", 20000)
+    if cap:
+        n_cap = int((final_test > float(cap)).sum())
+        final_oof, final_test = np.minimum(final_oof, float(cap)), np.minimum(final_test, float(cap))
+        if n_cap:
+            print(f"\n  predictions capped at {float(cap):,.0f}: {n_cap} test rows")
+
     # ---------------------------------------------------------------- the metric hangs on a handful of rows: show it without the worst one
     worst = int(np.argmax((si - final_oof) ** 2))
     rest = np.delete(np.arange(len(si)), worst)
@@ -297,6 +325,12 @@ def run_ensemble(cfg: dict, write_submission: bool = True) -> dict:
         path = SUBMISSIONS / f"submission_{out_tag}.csv"
         sub.to_csv(path, index=False)
         print(f"  wrote {path}")
+        legacy = ecfg.get("legacy_sentinel")          # e.g. 10000: the first data release's convention (inactive -> SI = 10000)
+        if legacy:
+            sub_l = pd.DataFrame({"index": te["test_index"].astype(int).values, "SI VACV": final_test + p_test * float(legacy)})
+            path_l = SUBMISSIONS / f"submission_{out_tag}_legacy{int(legacy)}.csv"
+            sub_l.sort_values("index").reset_index(drop=True).to_csv(path_l, index=False)
+            print(f"  wrote {path_l}  (same model, inactive compounds at SI = {int(legacy)}: only to check which convention the leaderboard uses)")
     return report
 
 
