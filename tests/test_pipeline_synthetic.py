@@ -88,3 +88,21 @@ def test_npz_embedding_block_aligns_by_smiles(mini_cfg, tmp_path):
     i = 5
     assert np.allclose(X[i], emb[uniq.index(df["smiles_std"].iloc[i])])
     assert store.block("emb_pca").shape == (len(df), 4)
+
+
+def test_aux_pool_never_sees_the_molecule_itself(mini_cfg, tmp_path):
+    import pandas as pd
+
+    from conftest import SMILES_POOL
+
+    df = build_all_table(mini_cfg)
+    pool = pd.DataFrame({"SMILES": SMILES_POOL[:20], "CC50_uM": np.linspace(1, 500, 20)})   # contains molecules that are also in the table
+    path = tmp_path / "pool.csv"
+    pool.to_csv(path, index=False)
+    cfg = {**mini_cfg["features"], "blocks": {**mini_cfg["features"]["blocks"],
+           "aux": {"type": "aux_pool", "path": str(path), "kernel_block": "morgan2c", "targets": {"cc50": {"col": "CC50_uM"}}}}}
+    store = FeatureStore(df, cfg, cache_dir=tmp_path / "cache", n_jobs=1)
+    X, names = store.block("aux"), store.block_names("aux")
+    assert X.shape == (len(df), 4) and np.isfinite(X).all() and names[0] == "aux_cc50_maxsim"
+    inside = df["smiles_std"].isin(set(store.df.loc[store.df["smiles_std"].isin(SMILES_POOL[:20]), "smiles_std"]))
+    assert inside.any() and (X[inside.values, 0] < 1.0 - 1e-6).all()      # an identical pool molecule is masked, so maxsim < 1

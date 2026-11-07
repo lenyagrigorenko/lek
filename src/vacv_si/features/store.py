@@ -25,7 +25,7 @@ import pandas as pd
 from ..chem import fingerprints as fp
 from ..chem.descriptors import rdkit_descriptors
 from ..chem.kernels import minmax_kernel
-from ..chem.standardize import mols_from_std
+from ..chem.standardize import StdOptions, mols_from_std, standardize_series
 from ..data.schema import assert_no_forbidden
 from ..paths import FEATURE_CACHE, resolve
 from .meta import build_meta
@@ -287,6 +287,42 @@ def _npz_embedding(store: FeatureStore, params: dict):
         U, S, _ = np.linalg.svd(X, full_matrices=False)
         out = (U[:, :k] * S[:k]).astype(np.float32)
     return out, [f"emb_{i}" for i in range(out.shape[1])]
+
+
+@register_block("aux_pool")
+def _aux_pool(store: FeatureStore, params: dict):
+    """Neighbour features from an auxiliary labelled pool of OTHER molecules (CC50, EC50, screening potency, ...).
+
+    The pool is a csv with a SMILES column and one numeric column per auxiliary target. For every row of the store and every
+    target we compute: max Tanimoto similarity to a pool molecule with that target, similarity-weighted (kernel-regression)
+    mean of log10(target), the target of the nearest molecule and the number of neighbours with similarity >= 0.6.
+    A molecule never sees its own record in the pool (matched by InChIKey connectivity), so no measured value of an
+    evaluated molecule can leak in, whatever the pool contains.
+    """
+    pool = pd.read_csv(resolve(params["path"]))
+    std = standardize_series(pool[params.get("smiles_col", "SMILES")].fillna("").astype(str), StdOptions(), n_jobs=store.n_jobs)
+    pool["ik14"], pool["smi"] = std["ik14"].values, std["smiles_std"].values
+    pool = pool[pool["smi"].notna()]
+    bspec = store._block_spec(params.get("kernel_block", "morgan2c"))
+    uniq = pool.drop_duplicates("ik14").reset_index(drop=True)
+    from ..chem.fingerprints import morgan_counts
+
+    Xp, _ = morgan_counts(mols_from_std(uniq["smi"]), radius=int(bspec.get("radius", 2)), n_bits=int(bspec.get("n_bits", 2048)))
+    K = minmax_kernel(store.block(params.get("kernel_block", "morgan2c")), Xp).astype(np.float64)
+    K[store.df["ik14"].to_numpy(dtype=object)[:, None] == uniq["ik14"].to_numpy(dtype=object)[None, :]] = 0.0
+    gamma = float(params.get("gamma", 4.0))
+    cols, names = [], []
+    for tname, tcfg in params["targets"].items():
+        y = pool[pool[tcfg["col"]].notna()].groupby("ik14")[tcfg["col"]].median()
+        if tcfg.get("log10", True):
+            y = np.log10(y.clip(lower=1e-6))
+        sel = np.flatnonzero(uniq["ik14"].isin(y.index).values)
+        yv = y.reindex(uniq["ik14"].iloc[sel]).to_numpy(dtype=float)
+        Kt = K[:, sel]
+        W = Kt ** gamma
+        cols += [Kt.max(1), (W @ yv + yv.mean() * 1e-3) / (W.sum(1) + 1e-3), yv[Kt.argmax(1)], np.log1p((Kt >= 0.6).sum(1))]
+        names += [f"aux_{tname}_maxsim", f"aux_{tname}_kr", f"aux_{tname}_nn1", f"aux_{tname}_n06"]
+    return np.column_stack(cols), names
 
 
 @register_block("mordred_desc")
