@@ -155,15 +155,21 @@ data/external (ChEMBL) ─────┘  (пул соседей / доп. об
 * **Новая модель:** класс с `fit(idx, y, w, ref)` / `predict(idx)` (см. `models/base.py`), регистрация в `models/registry.py`, строка в конфиге.
 * **Новый эксперимент / уровень признаков:** файл `configs/exp/<имя>.yaml` с `extends: final.yaml`; уровни `chem.yaml` и `assay.yaml` —
   пример (переопределяют `features.groups` и `default_source_col`).
-* **Эмбеддинги предобученных химических моделей на GPU (Colab):** `scripts/colab_embeddings.py` считает эмбеддинги, блок `npz_embedding`
-  подключает их (`configs/exp/embeddings.yaml`). Скрипт требует torch + transformers и в среде разработки не запускался.
+* **Эмбеддинги предобученных химических моделей (опция, в финальную посылку не входят):** `scripts/export_smiles.py` выгружает уникальные
+  SMILES, `scripts/colab_embeddings.py` считает эмбеддинги ChemBERTa-77M (MLM и MTR) и CheMeleon (на CPU это секунды, GPU не нужен);
+  MoLFormer и большие модели запускаются только с `--trust-remote-code` (код модели скачивается и исполняется, поэтому — на Colab:
+  `notebooks/colab_embeddings.ipynb`), в этой версии они не запускались. Блок `npz_embedding` подключает эмбеддинги по стандартизованному
+  SMILES, `scripts/make_embedding_configs.py` пишет `configs/exp/emb_{final,assay,chem}.yaml`: считаются только модели с эмбеддингами,
+  а ансамбль подмешивает сохранённые модели уровня (`ensemble.include_tags`). Модели без файла эмбеддинга пропускаются, так что основной
+  пайплайн от torch не зависит. Прирост в честном ансамбле около 1% MSE, то есть в пределах шума (`experiments/README.md`, № 26).
 
 ```
-configs/            base.yaml, exp/{final,assay,chem,embeddings,ablate_*,ext*,...}.yaml
+configs/            base.yaml, exp/{final,assay,chem,emb_*,ablate_*,ext*,...}.yaml
 data/raw/           файлы соревнования (не в git)      data/external/   vacv_external.csv + README + LICENSE + validation_report.json
 src/vacv_si/        data/ chem/ features/ models/ cv/ ensemble/ external/ cli.py
 tests/              инварианты решения (синтетика)      reports/         отчёты ансамблей, OOF
-scripts/            colab_embeddings.py, summarize_results.py     submissions/   submission*.csv
+scripts/            export_smiles.py, colab_embeddings.py, make_embedding_configs.py, summarize_results.py
+notebooks/          colab_embeddings.ipynb                       submissions/   submission*.csv
 ```
 
 ## Ограничения

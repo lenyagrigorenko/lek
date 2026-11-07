@@ -24,7 +24,7 @@ import pandas as pd
 
 from ..chem import fingerprints as fp
 from ..chem.descriptors import rdkit_descriptors
-from ..chem.kernels import minmax_kernel
+from ..chem.kernels import cosine_kernel, minmax_kernel
 from ..chem.standardize import StdOptions, mols_from_std, standardize_series
 from ..data.schema import assert_no_forbidden
 from ..paths import FEATURE_CACHE, resolve
@@ -191,13 +191,14 @@ class FeatureStore:
         if spec is None:
             raise KeyError(f"kernel {name!r} is not declared in features.kernels")
         bspec = self._block_spec(spec["block"])
-        key = _digest(self._smiles_key, bspec, spec, FEATURE_CODE_VERSION)
+        key = _digest(self._smiles_key, bspec, spec, FEATURE_CODE_VERSION, _file_signature(bspec.get("path")))
         path = self.cache_dir / f"K-{name}-{key}.npy"
         if path.exists():
             K = np.load(path)
         else:
-            log.info("building kernel %s from block %s", name, spec["block"])
-            K = minmax_kernel(self.block(spec["block"]))
+            log.info("building kernel %s from block %s (%s)", name, spec["block"], spec.get("type", "minmax"))
+            X = self.block(spec["block"])
+            K = cosine_kernel(X) if spec.get("type", "minmax") == "cosine" else minmax_kernel(X)
             np.save(path, K)
         self._kernels[name] = K
         return K

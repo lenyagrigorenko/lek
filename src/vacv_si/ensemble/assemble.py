@@ -19,25 +19,29 @@ from ..cv.runner import RAW_SCALE, exp_dir, exp_tag
 from ..data.prepare import load_all_table
 from ..data.schema import SENTINEL_VALUE
 from ..features.meta import build_meta
-from ..paths import REPORTS, SUBMISSIONS, ensure_dirs, resolve
+from ..paths import OOF_DIR, REPORTS, SUBMISSIONS, ensure_dirs, resolve
 from .blend import (RETRANSFORMS, TopKIsoBlend, TopKMeanBlend, TopKRegMean, fit_clf_stack, fit_reg_stack, nested_scores_clf)
 
 log = logging.getLogger(__name__)
 
 
 def _load_task(cfg: dict, task: str, names=None):
-    d = exp_dir(cfg) / task
+    """Stored OOF / test predictions of this config's own tag plus, with `ensemble.include_tags: [tag, ...]`, those of other
+    tags (e.g. the baseline feature tier an embedding experiment builds on). A name found in the own tag wins."""
+    ecfg = cfg.get("ensemble", {}) or {}
+    dirs = [exp_dir(cfg) / task] + [OOF_DIR / str(t) / task for t in ecfg.get("include_tags") or []]
+    mode = ecfg.get("test_source", "mix")
     store = {}
-    for npz in sorted(d.glob("*.npz")):
-        n = npz.stem
-        if names and n not in names:
-            continue
-        z = np.load(npz)
-        t_fold = z["test"].mean(axis=0)
-        t_full = z["test_full"].mean(axis=0) if "test_full" in z.files and len(z["test_full"]) else t_fold
-        mode = (cfg.get("ensemble", {}) or {}).get("test_source", "mix")
-        t = {"folds": t_fold, "full": t_full, "mix": 0.5 * (t_fold + t_full)}[mode]
-        store[n] = (np.nanmean(z["oof"], axis=0), t)
+    for d in dirs:
+        for npz in sorted(d.glob("*.npz")):
+            n = npz.stem
+            if n in store or (names and n not in names):
+                continue
+            z = np.load(npz)
+            t_fold = z["test"].mean(axis=0)
+            t_full = z["test_full"].mean(axis=0) if "test_full" in z.files and len(z["test_full"]) else t_fold
+            t = {"folds": t_fold, "full": t_full, "mix": 0.5 * (t_fold + t_full)}[mode]
+            store[n] = (np.nanmean(z["oof"], axis=0), t)
     return store
 
 

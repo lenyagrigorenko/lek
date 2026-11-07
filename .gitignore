@@ -12,6 +12,11 @@ artifacts/
 *.npy
 *.npz
 
+# embeddings of the competition molecules (regenerate: scripts/export_smiles.py, scripts/colab_embeddings.py) and the SMILES list for Colab
+data/embeddings/*
+!data/embeddings/.gitkeep
+colab/
+
 # Kaggle competition files are not redistributed: put train.csv / test.csv / sample_submit.csv into data/raw/
 data/raw/*.csv
 molecular-activity-prediction-hack/

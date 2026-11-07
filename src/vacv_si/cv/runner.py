@@ -23,7 +23,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from ..data.prepare import load_all_table
-from ..features.store import FEATURE_CODE_VERSION, FeatureStore
+from ..features.store import FEATURE_CODE_VERSION, FeatureStore, _file_signature
 from ..models import build_model
 from ..paths import OOF_DIR, ensure_dirs
 from .folds import Fold, make_fold_plan
@@ -58,6 +58,12 @@ def _expand(names, fcfg: dict) -> list[str]:
     return out
 
 
+def _with_file(bspec: dict) -> dict:
+    """A block that reads a file (pretrained embeddings, auxiliary pool) is hashed together with the file's (mtime, size):
+    replacing the file must invalidate the cached results of every model that uses it."""
+    return {**bspec, "_file": _file_signature(bspec["path"])} if bspec.get("path") else bspec
+
+
 def _referenced_feature_specs(spec: dict, fcfg: dict) -> dict:
     blocks = _expand(spec.get("blocks"), fcfg)
     kernels = []
@@ -65,10 +71,10 @@ def _referenced_feature_specs(spec: dict, fcfg: dict) -> dict:
         kernels.append(spec["kernel"]["base"])
     if spec.get("knn"):
         kernels.extend(spec["knn"].get("kernels") or [spec["knn"]["kernel"]])
-    out = {"blocks": {b: fcfg["blocks"][b] for b in blocks}, "kernels": {}}
+    out = {"blocks": {b: _with_file(fcfg["blocks"][b]) for b in blocks}, "kernels": {}}
     for k in kernels:
         kspec = fcfg["kernels"][k]
-        out["kernels"][k] = {"kernel": kspec, "block": fcfg["blocks"][kspec["block"]]}
+        out["kernels"][k] = {"kernel": kspec, "block": _with_file(fcfg["blocks"][kspec["block"]])}
     return out
 
 
@@ -294,7 +300,28 @@ def summarize(task: str, name: str, oof: np.ndarray, df: pd.DataFrame, train_row
 
 
 # ------------------------------------------------------------------------------------------------------------------ driver
-def _is_available(spec: dict) -> bool:
+def _missing_embedding(spec: dict, cfg: dict):
+    """Path of an `npz_embedding` file that the model needs but that does not exist (None if everything is there)."""
+    from ..paths import resolve
+
+    fcfg = cfg["features"]
+    needed = list(_expand(spec.get("blocks"), fcfg))
+    for kname in ((spec.get("knn") or {}).get("kernels") or ([spec["knn"]["kernel"]] if spec.get("knn") else [])) + \
+            ([spec["kernel"]["base"]] if spec.get("kernel") else []):
+        needed.append((fcfg.get("kernels") or {}).get(kname, {}).get("block"))
+    for b in needed:
+        bspec = (fcfg.get("blocks") or {}).get(b) or {}
+        if bspec.get("type") == "npz_embedding" and not resolve(bspec["path"]).exists():
+            return bspec["path"]
+    return None
+
+
+def _is_available(spec: dict, cfg: dict | None = None) -> bool:
+    if cfg is not None:
+        miss = _missing_embedding(spec, cfg)
+        if miss:
+            log.warning("skipping a model: embedding file %s is missing (see scripts/colab_embeddings.py)", miss)
+            return False
     typ = spec["type"]
     try:
         if typ == "lightgbm":
@@ -316,7 +343,7 @@ def run_experiments(cfg: dict, tasks: Optional[list[str]] = None, only: Optional
         for name, spec in (cfg["models"].get(task) or {}).items():
             if only and name not in only:
                 continue
-            if spec.get("enabled", True) is False or not _is_available(spec):
+            if spec.get("enabled", True) is False or not _is_available(spec, cfg):
                 continue
             d = out_root / task
             d.mkdir(parents=True, exist_ok=True)

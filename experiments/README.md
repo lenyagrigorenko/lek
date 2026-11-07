@@ -38,7 +38,17 @@
 | 23 | Вспомогательный пул чужих молекул (CC50, EC50, потенция скрининга; 3 914 молекул ChEMBL из репозитория коллеги) | блок `aux_pool`, `analysis/21_…`, `22_…` | Brier 0.0222 → 0.0223 и 0.0254 → 0.0249; RMSE 0.712 → 0.722; медиана сходства пула с нашими молекулами 0.49 | не принято |
 | 24 | Инициалы автора в лабораторных кодах (`as`, `ks`, `qs`, `ya`) как признак | `analysis/19_lab_code_tags.py` | модель уже различает серии (медиана прогноза 448 у `as` против 185–195) | отдельный признак не нужен |
 | 25 | Уровни признаков: все / химия + условия ассея / только химия | `final.yaml`, `assay.yaml`, `chem.yaml` | честный OOF-MSE **5.97 / 10.86 / 11.68 M**; без худшей строки 1.90 / 6.85 / 7.32 M | три посылки (`submissions/`) |
-| 26 | Эмбеддинги предобученной химической языковой модели на GPU | `embeddings.yaml`, `scripts/colab_embeddings.py` | ещё не запускалось | в планах |
+| 26 | Эмбеддинги предобученных моделей (ChemBERTa-77M MLM и MTR, CheMeleon): PCA-24 как признаки деревьев, косинусное ядро для KRR и для признаков-соседей; считаются за секунды на CPU | `emb_{final,chem,assay}.yaml` (генерирует `scripts/make_embedding_configs.py`), `scripts/colab_embeddings.py` | По отдельности не лучше базовых: основной уровень Brier 0.0219–0.0228 против 0.0222 у лучшей базовой (`et_ap`), RMSE регрессии 0.721 против 0.700; химия без источника Brier 0.086 против 0.084, RMSE 0.80 против 0.77; соседи по ядру эмбеддингов хуже всех (Brier 0.17). В честном ансамбле: основной уровень 5.971 → 5.921 M (−0.8%), без худшей строки 1.896 → 1.858 M; химия 11.676 → 11.626 M (−0.4%), без худшей строки 7.317 → 7.138 M. Парный бутстреп по строкам: P(выигрыш > 0) = 0.94–0.95, 95%-й интервал задевает 0 | не принято в финал: прирост около 1% не отличим от шума, а цена — зависимости (torch, chemprop, загрузка весов); остаётся опцией. MoLFormer и ChemGPT не запускались |
+
+**Как воспроизвести № 26** (после `run-all`; для основного уровня; для остальных замените `emb_final` на `emb_chem` / `emb_assay`):
+
+```bash
+python scripts/export_smiles.py                                   # colab/smiles_std.csv — вход скрипта эмбеддингов (его же загружают в Colab)
+python scripts/colab_embeddings.py --models chemberta77m_mlm chemberta77m_mtr chemeleon    # data/embeddings/*.npz
+python scripts/make_embedding_configs.py                          # configs/exp/emb_{final,assay,chem}.yaml
+python -m vacv_si cv -c configs/exp/emb_final.yaml                # считаются только модели с эмбеддингами
+python -m vacv_si ensemble -c configs/exp/emb_final.yaml --no-submit   # reports/ensemble_emb_final.json
+```
 
 ## Публичный лидерборд Kaggle (≈ 30% теста)
 

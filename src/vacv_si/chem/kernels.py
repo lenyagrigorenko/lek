@@ -27,6 +27,19 @@ def minmax_kernel(A: np.ndarray, B: np.ndarray | None = None, chunk: int = 512) 
     return K
 
 
+def cosine_kernel(X: np.ndarray, center: bool = True) -> np.ndarray:
+    """Cosine similarity of (column-centred) embeddings, clipped to [0, 1] so it can be used like a Tanimoto kernel.
+
+    Centring removes the common direction that pretrained embeddings share (their raw cosines are all close to 1).
+    """
+    X = np.asarray(X, dtype=np.float64)
+    if center:
+        X = X - X.mean(axis=0, keepdims=True)
+    norm = np.linalg.norm(X, axis=1, keepdims=True)
+    Z = X / np.where(norm > 0, norm, 1.0)
+    return np.clip(Z @ Z.T, 0.0, 1.0).astype(np.float32)
+
+
 def sharpen(K: np.ndarray, gamma: float) -> np.ndarray:
     """exp(gamma * (K - 1)) keeps positive semi-definiteness for gamma >= 0 and sharpens neighbourhoods."""
     return np.exp(gamma * (np.asarray(K, dtype=np.float64) - 1.0))
